@@ -6,7 +6,6 @@ use crate::js_module;
 use crate::image::image_object::ImageObject;
 use crate::ui::{Element, Widget};
 use deft_macros::{widget, js_methods};
-use yoga::Size;
 use crate::ui::image::delegate::ImageDelegate;
 
 #[widget]

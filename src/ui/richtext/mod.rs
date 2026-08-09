@@ -5,7 +5,6 @@ use crate::ui::{Element, Widget};
 use crate::js_module;
 use crate::text::textbox::{TextBox, TextCoord, TextElement};
 use deft_macros::{widget, js_methods};
-use yoga::Size;
 use crate::ui::richtext::delegate::{RichTextDelegate, RichTextDelegateData};
 
 #[widget]

@@ -731,9 +731,13 @@ impl StyleNode {
     pub(super) fn before_layout_recurse_in_tree(&mut self) {
         self.listener.before_layout();
         if !self.has_shadow() {
-            for c in &mut self.children {
-                c.before_layout_recurse_in_tree();
-            }
+            self.before_layout_recurse_for_children();
+        }
+    }
+
+    pub(super) fn before_layout_recurse_for_children(&mut self) {
+        for c in &mut self.children {
+            c.before_layout_recurse_in_tree();
         }
     }
 

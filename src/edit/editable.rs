@@ -68,26 +68,7 @@ struct EditableState {
     caret_pos: Rect,
     has_text: bool,
 }
-
-#[mrc_object]
-struct EditableVar {
-    element: ElementWeak,
-    line_height: Option<f32>,
-    multiple_line: bool,
-    paragraph: TextBox,
-    placeholder: TextBox,
-    layout_dirty: bool,
-    input_type: InputType,
-    caret_timer_handle: Option<TimerHandle>,
-    align: TextAlign,
-    edit_history: EditHistory,
-    rows: u32,
-    disabled: bool,
-    auto_height: bool,
-    state: Arc<Mutex<EditableState>>,
-}
-
-impl EditableVar {
+impl EditableDelegate {
 
     fn get_caret_pixels_position(&self) -> Option<Rect> {
         let el = self.element.upgrade().ok()?;
@@ -122,13 +103,70 @@ impl EditableVar {
 
 }
 
-#[derive(Clone)]
+#[mrc_object]
 struct EditableDelegate {
-    var: EditableVar,
+    element: ElementWeak,
+    line_height: Option<f32>,
+    multiple_line: bool,
+    paragraph: TextBox,
+    placeholder: TextBox,
+    measure_called: bool,
+    input_type: InputType,
+    caret_timer_handle: Option<TimerHandle>,
+    align: TextAlign,
+    edit_history: EditHistory,
+    rows: u32,
+    disabled: bool,
+    auto_height: bool,
+    last_layout_size: Option<(f32, Option<f32>)>,
     state: Arc<Mutex<EditableState>>,
 }
 
-impl EditableVar {
+impl EditableDelegate {
+    fn set_text(&mut self, text: String) {
+        let old_text = self.paragraph.get_text();
+        if text != old_text {
+            self.paragraph.clear();
+            let lines = text.split('\n').collect::<Vec<&str>>();
+            for ln in lines {
+                let ln = ln.trim_line_endings();
+                self.paragraph.add_line(Editable::build_line(ln.to_string()));
+            }
+            self.update_caret_value(TextCoord::new((0, 0)), false);
+        }
+        self.state.lock().unwrap().has_text = !text.is_empty();
+        self.make_layout_invalid();
+    }
+
+    pub fn set_placeholder(&mut self, placeholder: String) {
+        self.placeholder.clear();
+        self.placeholder.add_line(Editable::build_line(placeholder));
+        self.make_layout_invalid();
+    }
+
+    pub fn set_multiple_line(&mut self, multiple_line: bool) {
+        self.multiple_line = multiple_line;
+        self.paragraph.set_text_wrap(multiple_line);
+        self.make_layout_invalid();
+    }
+
+    pub fn set_rows(&mut self, rows: u32) {
+        self.rows = rows;
+        self.make_layout_invalid();
+    }
+
+    pub fn set_auto_height(&mut self, value: bool) {
+        self.auto_height = value;
+        self.make_layout_invalid();
+    }
+
+    fn make_layout_invalid(&mut self) {
+        self.last_layout_size = None;
+        self.element.mark_dirty(true);
+    }
+}
+
+impl EditableDelegate {
 
     fn layout(&mut self, bounds: &Rect) {
         let element = ok_or_return!(self.element.upgrade());
@@ -144,6 +182,12 @@ impl EditableVar {
             line_height = Some(content_height);
             layout_width = f32::NAN;
         }
+        let last_layout_size = Some((layout_width, line_height));
+        if self.last_layout_size == last_layout_size {
+            return;
+        }
+        self.last_layout_size = last_layout_size;
+
 
         self.placeholder.set_line_height(line_height);
         self.paragraph.set_line_height(line_height);
@@ -155,7 +199,6 @@ impl EditableVar {
         self.paragraph.set_padding(padding);
         self.paragraph.set_layout_width(layout_width);
         self.paragraph.layout();
-        self.layout_dirty = false;
     }
 
     fn handle_focus(&mut self) {
@@ -298,7 +341,7 @@ impl EditableVar {
         // emit text change
         self.element.emit(TextChangeEvent { value: text });
 
-        self.element.mark_dirty(true);
+        self.make_layout_invalid();
     }
 
     fn update_caret_value(&mut self, new_caret: TextCoord, is_kb_vertical: bool) {
@@ -594,82 +637,65 @@ impl EditableVar {
 #[widget]
 pub struct Editable {
     // base: Scroll,
-    var: EditableVar,
+    delegate: EditableDelegate,
 }
 
 #[js_methods]
 impl Editable {
     #[js_func]
     pub fn get_text(&self) -> String {
-        self.var.paragraph.get_text()
+        self.delegate.paragraph.get_text()
     }
 
     #[js_func]
     pub fn set_text(&mut self, text: String) {
-        let old_text = self.get_text();
-        if text != old_text {
-            self.var.paragraph.clear();
-            let lines = text.split('\n').collect::<Vec<&str>>();
-            for ln in lines {
-                let ln = ln.trim_line_endings();
-                self.var.paragraph.add_line(Self::build_line(ln.to_string()));
-            }
-            self.var.update_caret_value(TextCoord::new((0, 0)), false);
-        }
-        self.var.state.lock().unwrap().has_text = !text.is_empty();
-        self.el.mark_dirty(true);
+        self.delegate.set_text(text)
     }
 
     #[js_func]
     pub fn set_placeholder(&mut self, placeholder: String) {
-        self.var.placeholder.clear();
-        self.var.placeholder.add_line(Self::build_line(placeholder));
-        self.el.mark_dirty(true);
+        self.delegate.set_placeholder(placeholder);
     }
 
     #[js_func]
     pub fn get_placeholder(&self) -> String {
-        self.var.placeholder.get_text()
+        self.delegate.placeholder.get_text()
     }
 
     #[js_func]
     pub fn set_placeholder_style(&mut self, _style: JsValue) {
         //TODO impl
-        // self.var.placeholder_element.update_style(style, false);
+        // self.placeholder_element.update_style(style, false);
     }
 
     #[js_func]
     pub fn set_multiple_line(&mut self, multiple_line: bool) {
-        self.var.multiple_line = multiple_line;
-        self.var.paragraph.set_text_wrap(multiple_line);
-        self.el.mark_dirty(true);
+        self.delegate.set_multiple_line(multiple_line);
     }
 
     #[js_func]
     pub fn set_rows(&mut self, rows: u32) {
-        self.var.rows = rows;
-        self.el.mark_dirty(true);
+        self.delegate.set_rows(rows);
     }
 
     #[js_func]
     pub fn set_auto_height(&mut self, value: bool) {
-        self.var.auto_height = value;
-        self.el.mark_dirty(true);
+        self.delegate.set_auto_height(value);
     }
 
     #[js_func]
     pub fn set_selection_by_char_offset(&mut self, start: usize, end: usize) {
-        if let Some(start_caret) = self.var.paragraph.get_text_coord_by_char_offset(start) {
-            if let Some(end_caret) = self.var.paragraph.get_text_coord_by_char_offset(end) {
-                self.var.paragraph.select(start_caret, end_caret);
+        if let Some(start_caret) = self.delegate.paragraph.get_text_coord_by_char_offset(start) {
+            if let Some(end_caret) = self.delegate.paragraph.get_text_coord_by_char_offset(end) {
+                self.delegate.paragraph.select(start_caret, end_caret);
             }
         }
     }
 
     #[js_func]
     pub fn set_caret_by_char_offset(&mut self, char_offset: usize) {
-        if let Some(caret) = self.var.paragraph.get_text_coord_by_char_offset(char_offset) {
-            self.var.update_caret_value(caret, false);
+        if let Some(caret) = self.delegate.paragraph.get_text_coord_by_char_offset(char_offset) {
+            self.delegate.update_caret_value(caret, false);
         }
     }
 
@@ -677,23 +703,23 @@ impl Editable {
     pub fn set_type(&mut self, input_type: InputType) {
         match &input_type {
             InputType::Text => {
-                self.var.paragraph.set_mask_char(None);
+                self.delegate.paragraph.set_mask_char(None);
             }
             InputType::Password => {
-                self.var.paragraph.set_mask_char(Some('*'));
+                self.delegate.paragraph.set_mask_char(Some('*'));
             }
         }
-        self.var.input_type = input_type;
+        self.delegate.input_type = input_type;
     }
 
     #[js_func]
     pub fn get_type(&self) -> InputType {
-        self.var.input_type.clone()
+        self.delegate.input_type.clone()
     }
 
     #[js_func]
     pub fn is_disabled(&self) -> bool {
-        self.var.disabled
+        self.delegate.disabled
     }
 
     #[js_func]
@@ -706,11 +732,11 @@ impl Editable {
     }
     
     pub fn set_max_history(&mut self, max_history: usize) {
-        self.var.edit_history.set_max_history(max_history);
+        self.delegate.edit_history.set_max_history(max_history);
     }
     
     pub fn get_max_history(&self) -> usize {
-        self.var.edit_history.get_max_history()
+        self.delegate.edit_history.get_max_history()
     }
 
     fn caret_tick(state: Arc<Mutex<EditableState>>, mut context: ElementWeak) {
@@ -720,7 +746,7 @@ impl Editable {
     }
 
     fn handle_input(&mut self, input: &str) {
-        self.var.handle_input(input)
+        self.delegate.handle_input(input)
     }
 
     pub fn build_line(text: String) -> Vec<TextElement> {
@@ -739,26 +765,26 @@ impl Editable {
 
     fn bind_events(&mut self) {
         //TODO do not handle event when disabled
-        let me = self.var.as_weak();
+        let me = self.delegate.as_weak();
         self.el.register_event_listener(FocusEventListener::new(move |_e, _ctx| {
             let mut me = ok_or_return!(me.upgrade());
             me.handle_focus();
         }));
 
-        let me = self.var.as_weak();
+        let me = self.delegate.as_weak();
         self.el.register_event_listener(BlurEventListener::new(move |_e, _ctx| {
             let mut me = ok_or_return!(me.upgrade());
             me.handle_blur();
         }));
 
-        let me = self.var.as_weak();
+        let me = self.delegate.as_weak();
         self.el.register_event_listener(TextInputEventListener::new(move |e, _ctx| {
             let mut me = ok_or_return!(me.upgrade());
             let caret = me.paragraph.get_caret();
             me.insert_text(e.0.as_str(), caret, true);
         }));
 
-        let me = self.var.as_weak();
+        let me = self.delegate.as_weak();
         self.el.register_event_listener(ScrollEventListener::new(move |_e, _ctx| {
             let me = ok_or_return!(me.upgrade());
             me.update_ime();
@@ -770,7 +796,7 @@ impl Editable {
             me.set_cursor(Cursor::Icon(CursorIcon::Default));
         }));
 
-        let me = self.var.as_weak();
+        let me = self.delegate.as_weak();
         self.el.event_registration.set_default_behavior_handler(MouseDownEventListener::new(move |e, ctx| {
             if e.0.button == 2 {
                 let me = ok_or_return!(me.upgrade());
@@ -779,13 +805,13 @@ impl Editable {
             }
         }));
 
-        let me = self.var.as_weak();
+        let me = self.delegate.as_weak();
         self.el.event_registration.set_default_behavior_handler(KeyDownEventListener::new(move |e, _ctx| {
             let mut me = ok_or_return!(me.upgrade());
             me.handle_key_down(&e.0);
         }));
 
-        let me = self.var.as_weak();
+        let me = self.delegate.as_weak();
         self.el.event_registration.set_default_behavior_handler(PreeditEventListener::new(move |e, _ctx| {
             let mut var = ok_or_return!(me.upgrade());
             var.handle_input(&e.content);
@@ -814,7 +840,7 @@ impl Editable {
             for style in placeholder_styles {
                 match style {
                     ResolvedStyleProp::Color(color) => {
-                        self.var.placeholder.set_color(*color);
+                        self.delegate.placeholder.set_color(*color);
                     }
                     _ => {}
                 }
@@ -848,15 +874,6 @@ impl Editable {
 
         paragraph.add_line(Self::build_line("".to_string()));
         {
-            let state = state.clone();
-            let mut element_weak = ele.as_weak();
-            paragraph.set_layout_callback(move |has_text| {
-                let mut state = state.lock().unwrap();
-                state.has_text = has_text;
-                element_weak.mark_dirty(true);
-            });
-        }
-        {
             let mut element_weak = ele.as_weak();
             paragraph.set_repaint_callback(move || {
                 element_weak.mark_dirty(false);
@@ -867,12 +884,12 @@ impl Editable {
         let mut editable_state = EditableState::default();
         editable_state.caret_paint.set_stroke_width(2.0);
 
-        let var = EditableVarData {
+        let mut delegate = EditableDelegateData {
             paragraph,
             placeholder,
             multiple_line: false,
             line_height: None,
-            layout_dirty: true,
+            measure_called: false,
             element: ele.as_weak(),
             input_type: InputType::Text,
             //paint_offset: 0f32,
@@ -884,23 +901,32 @@ impl Editable {
             disabled: false,
             auto_height: true,
             state: state.clone(),
+            last_layout_size: None,
         }.to_ref();
-        let delegate = EditableDelegate {
-            state: state.clone(),
-            var: var.clone(),
-        };
+
+        {
+            let state = state.clone();
+            let delegate_weak = delegate.as_weak();
+            delegate.paragraph.set_layout_callback(move |has_text| {
+                let mut state = state.lock().unwrap();
+                state.has_text = has_text;
+                let mut delegate = ok_or_return!(delegate_weak.upgrade());
+                delegate.make_layout_invalid();
+            });
+        }
+
         ele.set_layout_listener(delegate.clone());
         ele.style.set_layout_measurer(delegate.clone());
-        ele.set_delegate(delegate);
+        ele.set_delegate(delegate.clone());
         let mut inst = Editable {
             // base,
-            var,
+            delegate,
             el: ele,
         };
         inst.set_multiple_line(false);
         {
-            let var_weak = inst.var.as_weak();
-            inst.var.paragraph.set_caret_change_callback(move || {
+            let var_weak = inst.delegate.as_weak();
+            inst.delegate.paragraph.set_caret_change_callback(move || {
                 let mut var = ok_or_return!(var_weak.upgrade());
                 var.setup_auto_scroll_callback();
                 var.emit_caret_change();
@@ -930,28 +956,28 @@ impl Widget for Editable {}
 
 impl ElementDelegate for EditableDelegate {
     fn handle_style_changed(&mut self, key: StylePropKey) {
-        let element = self.var.element.clone();
+        let element = self.element.clone();
         let element = ok_or_return!(element.upgrade());
         match key {
             StylePropKey::FontStyle => {
-                self.var.paragraph.set_font_style(element.style.get_font_style());
+                self.paragraph.set_font_style(element.style.get_font_style());
             }
             StylePropKey::FontSize => {
-                self.var.paragraph.set_font_size(element.style.get_font_size());
+                self.paragraph.set_font_size(element.style.get_font_size());
             }
             StylePropKey::LineHeight => {
-                self.var.line_height = element.style.get_line_height();
+                self.line_height = element.style.get_line_height();
             }
             StylePropKey::Color => {
-                self.var.paragraph.set_color(element.style.get_color());
-                let mut state = self.var.state.lock().unwrap();
+                self.paragraph.set_color(element.style.get_color());
+                let mut state = self.state.lock().unwrap();
                 state.caret_paint.set_color(element.style.get_color());
             }
             StylePropKey::FontWeight => {
-                self.var.paragraph.set_font_weight(element.style.get_font_weight());
+                self.paragraph.set_font_weight(element.style.get_font_weight());
             }
             StylePropKey::FontFamily => {
-                self.var.paragraph
+                self.paragraph
                     .set_font_families(element.style.get_font_family().clone());
             }
             _ => {}
@@ -959,9 +985,9 @@ impl ElementDelegate for EditableDelegate {
     }
 
     fn render(&mut self) -> RenderFn {
-        let state = self.var.state.clone();
-        let mut placeholder_renderer = self.var.placeholder.render();
-        let mut paragraph_renderer = self.var.paragraph.render();
+        let state = self.state.clone();
+        let mut placeholder_renderer = self.placeholder.render();
+        let mut paragraph_renderer = self.paragraph.render();
         RenderFn::new(move |painter| {
             let canvas = painter.canvas;
             let state = state.lock().unwrap();
@@ -988,29 +1014,34 @@ impl ElementDelegate for EditableDelegate {
 
 impl LayoutMeasurer for EditableDelegate {
     fn measure_layout(&mut self, params: MeasureParams) -> crate::base::Size {
-        let width = if self.var.multiple_line {
+        let width = if self.multiple_line {
             params.width
         } else {
             f32::NAN
         };
         let height = params.height;
         let bounds = Rect::new(0.0, 0.0, width, height);
-        self.var.layout(&bounds);
-        let (width, height) = self.var.paragraph.get_size_without_padding();
+        self.layout(&bounds);
+        let state = self.state.lock().unwrap();
+        let (width, height) = if !state.has_text && self.multiple_line {
+            self.placeholder.get_size_without_padding()
+        } else {
+            self.paragraph.get_size_without_padding()
+        };
         crate::base::Size { width, height }
     }
 }
 
 impl LayoutListener for EditableDelegate {
     fn before_layout(&mut self) {
-        self.var.layout_dirty = true;
+        self.measure_called = false;
     }
 
     fn after_layout(&mut self, bounds: &Rect) {
-        if self.var.layout_dirty {
-            self.var.layout(&bounds);
+        if !self.measure_called {
+            self.layout(&bounds);
         }
-        self.var.update_ime();
+        self.update_ime();
     }
 }
 
@@ -1041,8 +1072,8 @@ mod tests {
             TextCoord(3, 4),
         ];
         for c in expected_carets {
-            entry.var.move_caret(1);
-            assert_eq!(entry.var.paragraph.get_caret(), c);
+            entry.delegate.move_caret(1);
+            assert_eq!(entry.delegate.paragraph.get_caret(), c);
         }
     }
 
@@ -1064,11 +1095,11 @@ mod tests {
         entry.handle_input("");
         assert_eq!(text1, entry.get_text());
         // undo
-        entry.var.undo();
+        entry.delegate.undo();
         assert_eq!(text_all, entry.get_text());
-        assert_eq!(text_all.chars_count(), entry.var.paragraph.get_caret().1);
-        entry.var.undo();
+        assert_eq!(text_all.chars_count(), entry.delegate.paragraph.get_caret().1);
+        entry.delegate.undo();
         assert_eq!("", entry.get_text());
-        assert_eq!(0, entry.var.paragraph.get_caret().1);
+        assert_eq!(0, entry.delegate.paragraph.get_caret().1);
     }
 }

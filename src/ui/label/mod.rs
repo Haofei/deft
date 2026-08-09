@@ -3,11 +3,8 @@ mod delegate;
 use crate as deft;
 use crate::js_module;
 use crate::ui::{Element, Widget};
-use crate::event::TextUpdateEvent;
-use crate::text::textbox::{TextBox, TextElement, TextUnit};
 use deft_macros::{widget, js_methods};
-use yoga::Size;
-use crate::ui::label::delegate::{LabelDelegate, LabelDelegateData};
+use crate::ui::label::delegate::LabelDelegate;
 
 #[widget]
 pub struct Label {

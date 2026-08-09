@@ -312,7 +312,7 @@ impl Scrollable {
         let layout_height = height;
         // self.element.style.calculate_shadow_layout(f32::NAN, f32::NAN, LTR);
         //TODO exclude self
-        element.before_layout_recurse_in_tree();
+        element.before_layout_recurse_for_children();
         element.calculate_shadow_layout(width, layout_height, LTR);
     }
 

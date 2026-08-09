@@ -44,7 +44,7 @@ impl LayoutListener for ImageDelegate {
 }
 
 impl LayoutMeasurer for ImageDelegate {
-    fn measure_layout(&mut self, params: MeasureParams) -> Size {
+    fn measure_layout(&mut self, _params: MeasureParams) -> Size {
         let (width, height) = self.img.lock().unwrap().get_size();
         Size { width, height }
     }
