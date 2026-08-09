@@ -38,7 +38,9 @@ impl ElementDelegate for ImageDelegate {
 }
 
 impl LayoutListener for ImageDelegate {
-    fn after_layout(&mut self, bounds: &Rect) {
+    fn after_layout(&mut self, _bounds: &Rect) {
+        let el = ok_or_return!(self.element.upgrade());
+        let bounds = el.get_content_bounds();
         self.img.lock().unwrap().set_container_size((bounds.width, bounds.height));
     }
 }

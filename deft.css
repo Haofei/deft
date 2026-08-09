@@ -91,9 +91,9 @@ button[disabled], button[disabled]:hover {
 }
 
 checkbox::box {
-    width: 1.2em;
-    height: 1.2em;
-    margin-right: 2px;
+    width: 14px;
+    height: 14px;
+    margin-right: 4px;
     border: 1px var(--deft-border-color);
     border-radius: 2px;
 }
@@ -121,11 +121,11 @@ radiogroup {
 
 
 radio::box {
-    width: 1.2em;
-    height: 1.2em;
-    margin-right: 2px;
+    width: 14px;
+    height: 14px;
+    margin-right: 4px;
     border: 1px var(--deft-border-color);
-    border-radius: 0.6em;
+    border-radius: 7px;
 }
 
 radio:hover::box {
