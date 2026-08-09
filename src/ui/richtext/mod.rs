@@ -81,21 +81,7 @@ impl RichText {
             el: element,
             delegate,
         };
-        let textbox_weak = this.delegate.text_box.as_weak();
-        this.el.style.set_measure_func(textbox_weak, |textbox_weak, params| {
-                if let Ok(mut text_box) = textbox_weak.upgrade() {
-                    text_box.set_layout_width(params.width);
-                    text_box.layout();
-                    return Size {
-                        width: text_box.max_intrinsic_width(),
-                        height: text_box.height(),
-                    };
-                }
-                return Size {
-                    width: 0.0,
-                    height: 0.0,
-                };
-            });
+        this.el.style.set_layout_measurer(this.delegate.clone());
         this
     }
 }

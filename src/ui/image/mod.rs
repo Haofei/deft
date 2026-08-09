@@ -44,12 +44,6 @@ impl Image {
             src: "".to_string(),
             img: Arc::new(Mutex::new(ImageObject::none())),
         };
-        //TODO use weak ref?
-        let img_obj = img.img.clone();
-        img.el.style.set_measure_func(img_obj, |img, _params| {
-                let (width, height) = img.lock().unwrap().get_size();
-                return Size { width, height };
-            });
         let element = img.el.as_weak();
         let img2 = img.img.clone();
         let delegate = ImageDelegate {
@@ -57,6 +51,7 @@ impl Image {
             img: img2,
         };
         img.el.set_layout_listener(delegate.clone());
+        img.el.style.set_layout_measurer(delegate.clone());
         img.el.set_delegate(delegate);
         img
     }

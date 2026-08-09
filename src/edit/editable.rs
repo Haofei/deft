@@ -25,6 +25,8 @@ use std::sync::{Arc, Mutex};
 use winit::keyboard::NamedKey;
 use winit::window::{Cursor, CursorIcon};
 use crate::style::listener::LayoutListener;
+use crate::style::measure::LayoutMeasurer;
+use crate::style::node_item::MeasureParams;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -888,6 +890,7 @@ impl Editable {
             var: var.clone(),
         };
         ele.set_layout_listener(delegate.clone());
+        ele.style.set_layout_measurer(delegate.clone());
         ele.set_delegate(delegate);
         let mut inst = Editable {
             // base,
@@ -905,27 +908,6 @@ impl Editable {
                 var.element.mark_dirty(false);
             });
         }
-
-        let inst_weak = inst.var.as_weak();
-        inst.el.style.set_measure_func(inst_weak, |entry, params| {
-                let default_size = yoga::Size {
-                    width: 0.0,
-                    height: 0.0,
-                };
-                if let Ok(mut e) = entry.upgrade() {
-                    let width = if e.multiple_line {
-                        params.width
-                    } else {
-                        f32::NAN
-                    };
-                    let height = params.height;
-                    let bounds = Rect::new(0.0, 0.0, width, height);
-                    e.layout(&bounds);
-                    let (width, height) = e.paragraph.get_size_without_padding();
-                    return yoga::Size { width, height };
-                }
-                default_size
-            });
 
         inst.bind_events();
 
@@ -1002,6 +984,21 @@ impl ElementDelegate for EditableDelegate {
         })
     }
 
+}
+
+impl LayoutMeasurer for EditableDelegate {
+    fn measure_layout(&mut self, params: MeasureParams) -> crate::base::Size {
+        let width = if self.var.multiple_line {
+            params.width
+        } else {
+            f32::NAN
+        };
+        let height = params.height;
+        let bounds = Rect::new(0.0, 0.0, width, height);
+        self.var.layout(&bounds);
+        let (width, height) = self.var.paragraph.get_size_without_padding();
+        crate::base::Size { width, height }
+    }
 }
 
 impl LayoutListener for EditableDelegate {

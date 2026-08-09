@@ -6,7 +6,7 @@ pub mod css_manager;
 pub mod flex;
 pub mod font;
 pub mod length;
-mod node_item;
+pub mod node_item;
 pub mod overflow;
 mod select;
 pub mod style_vars;
@@ -18,6 +18,7 @@ pub mod stylesheet;
 pub mod listener;
 pub mod parsed_styles;
 pub mod style_listener;
+pub mod measure;
 
 use crate as deft;
 use crate::animation::css_actor::CssAnimationActor;
@@ -31,7 +32,7 @@ use crate::mrc::{Mrc};
 use crate::style::animation::AnimationParams;
 use crate::style::font::{FontStyle, LineHeightVal};
 use crate::style::length::{Length, LengthContext, LengthOrPercent};
-use crate::style::node_item::{MeasureParams, NodeItem};
+use crate::style::node_item::{NodeItem};
 use crate::style::overflow::Overflow;
 use crate::style::style_vars::StyleVars;
 use crate::style::transform::StyleTransform;
@@ -48,6 +49,7 @@ use swash::Style;
 use yoga::{Align, Direction, Display, FlexDirection, Justify, Layout, Node, PositionType, Size, StyleUnit, Wrap};
 use crate::base;
 use crate::style::listener::{EmptyLayoutListener, LayoutListener};
+use crate::style::measure::LayoutMeasurer;
 use crate::style::parsed_styles::ParsedStyles;
 use crate::style::style_list::{ParsedStyleProp, StyleList};
 use crate::style::style_listener::BoxedStyleListener;
@@ -747,7 +749,7 @@ impl StyleNode {
         (content_width + padding.1, content_height + padding.2)
     }
 
-    pub fn get_bounds(&self) -> base::Rect {
+    pub fn get_bounds(&self) -> Rect {
         let ml = self.yoga_node.layout.get_layout().unwrap_or(Layout::new(0.0, 0.0, 0.0,0.0, 0.0, 0.0));
         base::Rect::from_layout(&ml)
     }
@@ -760,12 +762,17 @@ impl StyleNode {
         self.yoga_node.layout.get_size().unwrap_or_default()
     }
 
-    pub fn set_measure_func<C: 'static, F: FnMut(&mut C, MeasureParams) -> Size + 'static>(
+    pub fn set_layout_measurer<F: LayoutMeasurer + 'static>(
         &mut self,
-        context: C,
-        measure_func: F,
+        mut measure_func: F,
     ) {
-        self.yoga_node.set_measure_func(context, measure_func)
+        self.yoga_node.set_measure_func((), move |_ctx, params| {
+            let size = measure_func.measure_layout(params);
+            Size {
+                width: size.width,
+                height: size.height,
+            }
+        })
     }
 
     fn update_shadow_recursively(&mut self) {

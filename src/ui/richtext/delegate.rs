@@ -1,8 +1,11 @@
 use crate as deft;
 use deft_macros::mrc_object;
+use crate::base::Size;
 use crate::ui::{ElementDelegate, ElementWeak};
 use crate::ok_or_return;
 use crate::render::RenderFn;
+use crate::style::measure::LayoutMeasurer;
+use crate::style::node_item::MeasureParams;
 use crate::style::StylePropKey;
 use crate::text::textbox::TextBox;
 
@@ -42,5 +45,16 @@ impl ElementDelegate for RichTextDelegate {
 
     fn render(&mut self) -> RenderFn {
         self.text_box.render()
+    }
+}
+
+impl LayoutMeasurer for RichTextDelegate {
+    fn measure_layout(&mut self, params: MeasureParams) -> Size {
+        self.text_box.set_layout_width(params.width);
+        self.text_box.layout();
+        Size {
+            width: self.text_box.max_intrinsic_width(),
+            height: self.text_box.height(),
+        }
     }
 }
