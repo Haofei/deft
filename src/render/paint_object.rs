@@ -1,11 +1,11 @@
 use crate::base;
-use crate::border::tiny_path_to_skia_path;
 use crate::paint::{InvalidRects, RenderLayerKey};
 use crate::render::RenderFn;
 use crate::style::color::ColorHelper;
 use skia_safe::PaintStyle::{Fill, Stroke};
 use skia_safe::{Canvas, Color, Image, Matrix, Paint, Rect};
 use tiny_skia::Path;
+use crate::style::border::tiny_path_to_skia_path;
 
 pub struct ElementPO {
     pub coord: (f32, f32),

@@ -8,3 +8,4 @@ dist/
 examples/debug-js
 Cargo.lock
 tsconfig.dts.json
+.DS_Store

@@ -1,7 +1,7 @@
 use crate as deft;
-use crate::element::container::Container;
+use crate::ui::container::Container;
 use crate::js_module;
-use crate::element::label::Label;
+use crate::ui::label::Label;
 use crate::event::ClickEventListener;
 use crate::js_value;
 use crate::mrc::Mrc;

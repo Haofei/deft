@@ -1,17 +1,24 @@
 use crate as deft;
-use crate::base::{Event, EventHandler, EventRegistration};
+use crate::base::{EventContext, EventListener, EventRegistration};
 use crate::event_loop::{create_event_loop_fn_mut, create_event_loop_proxy, AppEventProxy};
-use crate::{js_deserialize, js_module, js_value};
+use crate::{bind_js_event_listener, js_deserialize, js_module, js_value};
 use anyhow::Error;
-use deft_macros::{js_methods, mrc_object};
+use deft_macros::{event, js_methods, mrc_object};
 use deft_tray::{Tray, TrayMenu};
 use image::ImageReader;
 use quick_js::JsValue;
 use std::cell::Cell;
+use crate::js::JsError;
 
 thread_local! {
     pub static NEXT_TRAY_ID: Cell<u32> = Cell::new(1);
 }
+
+#[event]
+pub struct MenuClickEvent(String);
+
+#[event]
+pub struct ActivateEvent;
 
 #[mrc_object]
 pub struct SystemTray {
@@ -51,14 +58,12 @@ impl SystemTray {
 
         let mut me = inst.clone();
         let mut menu_active_callback = create_event_loop_fn_mut(move |menu_id: String| {
-            let mut event = Event::new("menuclick", menu_id);
-            me.event_registration.emit_event(&mut event);
+            me.event_registration.emit(MenuClickEvent(menu_id), &mut EventContext::new());
         });
 
         let mut sr = inst.clone();
         let mut activate_callback = create_event_loop_fn_mut(move |()| {
-            let mut event = Event::new("activate", ());
-            sr.event_registration.emit_event(&mut event);
+            sr.event_registration.emit(ActivateEvent, &mut EventContext::new());
         });
         inst.tray_impl.set_active_callback(Box::new(move || {
             activate_callback.call(());
@@ -69,16 +74,6 @@ impl SystemTray {
         inst
     }
 
-    pub fn add_event_listener(
-        &mut self,
-        event_type: String,
-        handler: Box<EventHandler>,
-    ) -> u32 {
-        self.inner
-            .event_registration
-            .add_event_listener(&event_type, handler)
-    }
-
     #[js_func]
     pub fn remove_event_listener(&mut self, event_type: String, id: i32) {
         self.inner
@@ -87,9 +82,14 @@ impl SystemTray {
     }
 
     #[js_func]
-    pub fn bind_event(&mut self, event_name: String, callback: JsValue) -> u32 {
-        self.event_registration
-            .add_js_event_listener(&event_name, callback) as u32
+    pub fn bind_event(&mut self, event_type: String, listener: JsValue) -> Result<u32, JsError> {
+        let id = bind_js_event_listener!(
+            self, event_type.as_str(), listener;
+            "menuclick" => MenuClickEventListener,
+            "activate"  => ActivateEventListener,
+        );
+        let id = id.ok_or_else(|| JsError::new(format!("unknown event_type:{}", event_type)))?;
+        Ok(id)
     }
 
     #[js_func]
@@ -129,4 +129,16 @@ impl SystemTray {
         let height = img.height();
         Some((rgba_img.into_raw(), width, height))
     }
+
+    pub fn register_event_listener<T: 'static, H: EventListener<T> + 'static>(
+        &mut self,
+        listener: H,
+    ) -> u32 {
+        self.event_registration.register_event_listener(listener)
+    }
+
+    pub fn unregister_event_listener(&mut self, id: u32) {
+        self.event_registration.unregister_event_listener(id)
+    }
+
 }

@@ -1,5 +1,5 @@
-use crate::element::text::simple_text_paragraph::SimpleTextParagraph;
-use crate::element::text::{intersect_range, ColOffset};
+use crate::text::text::simple_text_paragraph::SimpleTextParagraph;
+use crate::text::text::{intersect_range, ColOffset};
 use crate::string::StringUtils;
 use crate::text::textbox::{ParagraphParams, TextBox, TextElement};
 

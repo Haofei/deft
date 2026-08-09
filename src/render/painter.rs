@@ -1,5 +1,4 @@
 use crate::base::Rect;
-use crate::border::tiny_path_to_skia_path;
 use crate::canvas_util::CanvasHelper;
 use crate::paint::{DrawLayer, InvalidRects, LayerState, Painter, RenderLayerKey};
 use crate::render::paint_object::{ElementPO, LayerPO};
@@ -8,6 +7,7 @@ use skia_safe::{Canvas, ClipOp, Color, FilterMode, Matrix, Paint, PaintStyle, Sa
 use skia_window::context::RenderContext;
 use std::collections::HashMap;
 use std::mem;
+use crate::style::border::tiny_path_to_skia_path;
 
 pub struct ElementPainter {
     scale: f32,

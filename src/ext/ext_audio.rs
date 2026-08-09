@@ -3,14 +3,15 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::base::{Event, EventRegistration};
-use crate::ext::audio_player::{AudioNotify, AudioServer, AudioSources};
+use crate::base::{EventContext, EventListener, EventRegistration};
+use crate::ext::audio_player::{AudioCurrentChangeInfo, AudioMeta, AudioNotify, AudioServer, AudioSources};
 use crate::js::js_event_loop::{js_create_event_loop_proxy, JsEventLoopProxy};
-use crate::{js_deserialize, js_module, js_value};
+use crate::{bind_js_event_listener, js_deserialize, js_module, js_value};
 use anyhow::Error;
-use deft_macros::{js_methods, mrc_object};
+use deft_macros::{event, js_methods, mrc_object};
 use quick_js::JsValue;
 use serde::{Deserialize, Serialize};
+use crate::js::JsError;
 
 thread_local! {
     pub static NEXT_ID: Cell<u32> = Cell::new(1);
@@ -23,6 +24,22 @@ thread_local! {
         }
     });
 }
+
+#[event]
+pub struct LoadEvent(AudioMeta);
+#[event]
+pub struct TimeUpdateEvent(f32);
+#[event]
+pub struct EndEvent;
+#[event]
+pub struct FinishEvent;
+#[event]
+pub struct PauseEvent;
+#[event]
+pub struct StopEvent;
+#[event]
+pub struct CurrentChangeEvent(AudioCurrentChangeInfo);
+
 
 #[mrc_object]
 pub struct Audio {
@@ -58,33 +75,33 @@ fn handle_play_notify(elp: JsEventLoopProxy, id: u32, msg: AudioNotify) {
         if let Some(a) = &mut audio {
             match msg {
                 AudioNotify::Load(meta) => {
-                    let mut event = Event::new("load", meta);
-                    a.event_registration.emit_event(&mut event);
+                    let mut ctx = EventContext::new();
+                    a.event_registration.emit(LoadEvent(meta), &mut ctx);
                 }
                 AudioNotify::TimeUpdate(time) => {
-                    let mut event = Event::new("timeupdate", time);
-                    a.event_registration.emit_event(&mut event);
+                    let mut ctx = EventContext::new();
+                    a.event_registration.emit(TimeUpdateEvent(time), &mut ctx);
                 }
                 AudioNotify::End => {
-                    let mut event = Event::new("end", ());
-                    a.event_registration.emit_event(&mut event);
+                    let mut ctx = EventContext::new();
+                    a.event_registration.emit(EndEvent, &mut ctx);
                 }
                 AudioNotify::Finish => {
-                    let mut event = Event::new("finish", ());
-                    a.event_registration.emit_event(&mut event);
+                    let mut ctx = EventContext::new();
+                    a.event_registration.emit(FinishEvent, &mut ctx);
                     unregistry_playing(a);
                 }
                 AudioNotify::Pause => {
-                    let mut event = Event::new("pause", ());
-                    a.event_registration.emit_event(&mut event);
+                    let mut ctx = EventContext::new();
+                    a.event_registration.emit(PauseEvent, &mut ctx);
                 }
                 AudioNotify::Stop => {
-                    let mut event = Event::new("stop", ());
-                    a.event_registration.emit_event(&mut event);
+                    let mut ctx = EventContext::new();
+                    a.event_registration.emit(StopEvent, &mut ctx);
                 }
                 AudioNotify::CurrentChange(info) => {
-                    let mut event = Event::new("currentchange", info);
-                    a.event_registration.emit_event(&mut event);
+                    let mut ctx = EventContext::new();
+                    a.event_registration.emit(CurrentChangeEvent(info), &mut ctx);
                 }
             }
         }
@@ -150,10 +167,20 @@ impl Audio {
     pub fn add_event_listener(
         &mut self,
         event_type: String,
-        callback: JsValue,
-    ) -> Result<i32, Error> {
-        let er = &mut self.event_registration;
-        Ok(er.add_js_event_listener(&event_type, callback))
+        listener: JsValue,
+    ) -> Result<u32, JsError> {
+        let id = bind_js_event_listener!(
+            self, event_type.as_str(), listener;
+            "load" => LoadEventListener,
+            "timeupdate"  => TimeUpdateEventListener,
+            "end"  => EndEventListener,
+            "finish"   => FinishEventListener,
+            "pause" => PauseEventListener,
+            "stop" => StopEventListener,
+            "currentchange" => CurrentChangeEventListener,
+        );
+        let id = id.ok_or_else(|| JsError::new(format!("unknown event_type:{}", event_type)))?;
+        Ok(id)
     }
 
     #[js_func]
@@ -162,4 +189,16 @@ impl Audio {
             .remove_event_listener(&event_type, id);
         Ok(())
     }
+
+    pub fn register_event_listener<T: 'static, H: EventListener<T> + 'static>(
+        &mut self,
+        listener: H,
+    ) -> u32 {
+        self.event_registration.register_event_listener(listener)
+    }
+
+    pub fn unregister_event_listener(&mut self, id: u32) {
+        self.event_registration.unregister_event_listener(id)
+    }
+
 }

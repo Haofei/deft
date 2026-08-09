@@ -185,9 +185,6 @@ impl NodeItem {
     }
 
     pub fn build_yn(&mut self) {
-        for c in &mut self.children {
-            c.build_yn();
-        }
 
         let mut n = YogaNode::new();
         n.set_position_type(self.position_type);
@@ -220,11 +217,6 @@ impl NodeItem {
         if self.is_layout_boundary() {
             n.set_context(Some(Context::new(self.clone())));
             n.set_measure_func(Some(custom_measure_shadow));
-
-            let mut s = YogaNode::new();
-            self.apply_inner_style(&mut s);
-            self.bind_children(&mut s);
-            let _ = self.layout.update_shadow_yn(Some(s));
         } else {
             if let Some(measure_func) = self.measure_fn.clone() {
                 n.set_context(Some(Context::new(measure_func)));
@@ -232,8 +224,17 @@ impl NodeItem {
             }
 
             self.apply_inner_style(&mut n);
-            self.bind_children(&mut n);
+            self.build_children(&mut n);
             let _ = self.layout.update_shadow_yn(None);
+        }
+    }
+
+    pub fn build_shadow_yn(&mut self) {
+        if self.is_layout_boundary() {
+            let mut s = YogaNode::new();
+            self.apply_inner_style(&mut s);
+            self.build_children(&mut s);
+            let _ = self.layout.update_shadow_yn(Some(s));
         }
     }
 
@@ -253,7 +254,10 @@ impl NodeItem {
         container.set_direction(self.direction);
     }
 
-    fn bind_children(&self, n: &mut YogaNode) {
+    fn build_children(&mut self, n: &mut YogaNode) {
+        for c in &mut self.children {
+            c.build_yn();
+        }
         let mut idx = 0;
         for c in &self.children {
             if let Ok(mut yn) = c.layout.get_yn() {

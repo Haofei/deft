@@ -1,7 +1,7 @@
 use crate as deft;
 use crate::base::Rect;
 use crate::js_module;
-use crate::element::Element;
+use crate::ui::Element;
 use crate::event::ClickEventListener;
 use crate::ext::ext_window::WindowAttrs;
 use crate::platform::support_multiple_windows;

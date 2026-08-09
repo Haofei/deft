@@ -1,5 +1,4 @@
 use crate as deft;
-use crate::base;
 use crate::base::{MouseDetail, Rect, TouchDetail};
 use deft_macros::event;
 use serde::{Deserialize, Serialize};
@@ -841,11 +840,6 @@ pub struct DroppedFileEvent(pub String);
 
 #[event]
 pub struct HoveredFileEvent(pub String);
-
-#[event]
-pub struct BoundsChangeEvent {
-    pub origin_bounds: base::Rect,
-}
 
 #[event]
 pub struct CaretChangeEvent {

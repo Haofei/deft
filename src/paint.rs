@@ -1,9 +1,8 @@
 use crate::base::{Id, IdKey, Rect};
-use crate::element::Element;
+use crate::ui::Element;
 use crate::render::layout_tree::LayoutTree;
 use crate::render::paint_object::{ElementPO, LayerPO};
 use crate::render::RenderFn;
-use crate::renderer::CpuRenderer;
 use crate::{some_or_continue, some_or_return};
 use skia_safe::Canvas;
 use skia_safe::{scalar, Color, Image, Matrix, Path, PathOp, Point, Vector};
@@ -13,6 +12,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::mem;
 use yoga::PositionType;
+use crate::render::renderer::CpuRenderer;
 use crate::style::border_path::BorderPath;
 
 thread_local! {
@@ -244,12 +244,12 @@ impl RenderTree {
             element_id: element.get_eid(),
             coord: (bounds.x, bounds.y),
             children_viewport: element.get_children_viewport(),
-            border_color: element.style.border_color,
+            border_color: element.style.get_border_color(),
             renderer: Box::new(move || {
-                RenderFn::merge(vec![el.scrollable.render(), el.render()])
+                RenderFn::merge(vec![el.style.scrollable.render(), el.render()])
             }),
-            background_image: element.style.background_image.clone(),
-            background_color: element.style.background_color,
+            background_image: element.style.get_background_image().clone(),
+            background_color: element.style.get_background_color(),
             border_width: element.get_border_width(),
             width: bounds.width,
             height: bounds.height,
@@ -401,7 +401,7 @@ impl RenderTree {
         let bounds = element.get_bounds();
         let need_create_children_layer = Self::need_create_children_layer(element);
         if need_create_children_layer {
-            let (scroll_left, scroll_top) = element.scrollable.scroll_offset();
+            let (scroll_left, scroll_top) = element.style.scrollable.scroll_offset();
             let clip_rect = bounds.translate(-bounds.x + scroll_left, -bounds.y + scroll_top);
             matrix_calculator.save();
 
@@ -536,9 +536,9 @@ impl RenderTree {
         let element_object_idx = element.render_object_idx.unwrap();
         // let mut border_path = element.create_border_path();
         let element_data = &mut self.element_objects[element_object_idx];
-        element_data.border_color = element.style.border_color;
-        element_data.background_image = element.style.background_image.clone();
-        element_data.background_color = element.style.background_color;
+        element_data.border_color = element.style.get_border_color();
+        element_data.background_image = element.style.get_background_image().clone();
+        element_data.background_color = element.style.get_background_color();
         element_data.border_width = element.get_border_width();
         element_data.coord = (bounds.x, bounds.y);
         element_data.layer_object_idx = Some(layer_object_idx);
@@ -568,16 +568,16 @@ impl RenderTree {
     }
 
     fn need_create_root_layer(element: &Element) -> bool {
-        if element.style.transform.is_some() {
+        if element.style.get_transform().is_some() {
             return true;
         }
-        let pos_type = element.style.yoga_node.position_type;
+        let pos_type = element.style.get_position_type();
         pos_type == PositionType::Absolute || pos_type == PositionType::Relative
     }
 
     fn need_create_children_layer(element: &Element) -> bool {
-        element.scrollable.vertical_bar.is_scrollable()
-            || element.scrollable.horizontal_bar.is_scrollable()
+        element.style.scrollable.vertical_bar.is_scrollable()
+            || element.style.scrollable.horizontal_bar.is_scrollable()
     }
 
     pub fn build_paint_tree(&mut self, viewport: &Rect) -> LayerPO {

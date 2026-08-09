@@ -14,12 +14,12 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use std::{fs, thread};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AudioCurrentChangeInfo {
     index: usize,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AudioMeta {
     index: usize,
     duration: f32,

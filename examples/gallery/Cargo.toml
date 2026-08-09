@@ -4,9 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-deft = { path = "../..", default-features = false }
 env_logger = "0.11.8"
 log = "0.4.27"
+
+[target.'cfg(target_os = "emscripten")'.dependencies]
+deft = { path = "../..", default-features = false }
+
+[target.'cfg(not(target_os = "emscripten"))'.dependencies]
+deft = { path = "../.." }
 
 [features]
 clipboard = ["deft/clipboard"]

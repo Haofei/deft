@@ -3,19 +3,18 @@ pub mod util;
 
 use deft_macros::mrc_object;
 use crate as deft;
-use crate::color::parse_hex_color;
-use crate::element::paragraph::simple_paragraph_builder::SimpleParagraphBuilder;
-use crate::element::paragraph::ParagraphParams;
-use crate::element::text::intersect_range;
-use crate::element::text::simple_text_paragraph::SimpleTextParagraph;
-use crate::element::Element;
+use crate::text::paragraph::simple_paragraph_builder::SimpleParagraphBuilder;
+use crate::text::paragraph::ParagraphParams;
+use crate::text::text::intersect_range;
+use crate::text::text::simple_text_paragraph::SimpleTextParagraph;
+use crate::ui::Element;
 use crate::event::{ClickEventListener, KeyDownEventListener, KeyEventDetail, MouseDownEventListener, MouseMoveEventListener, MouseUpEventListener, KEY_MOD_CTRL};
 use crate::font::family::{FontFamilies, FontFamily};
 use crate::number::DeNan;
 use crate::paint::Painter;
 use crate::render::RenderFn;
 use crate::string::StringUtils;
-use crate::style::color::parse_optional_color_str;
+use crate::style::color::{parse_hex_color, parse_optional_color_str};
 use crate::style::font::FontStyle;
 use crate::style::PropValueParse;
 use crate::text::textbox::line::Line;
@@ -896,8 +895,8 @@ impl TextBox {
 
 #[cfg(test)]
 mod tests {
-    use crate::element::common::editable::Editable;
-    use crate::element::paragraph::ParagraphParams;
+    use crate::edit::editable::Editable;
+    use crate::text::paragraph::ParagraphParams;
     use crate::font::family::{FontFamilies, FontFamily};
     use crate::style::font::FontStyle;
     use crate::text::textbox::{TextBox, TextElement, TextUnit};

@@ -3,7 +3,7 @@
 use deft_macros::{widget, js_methods};
 use deft::app::{App, IApp};
 use deft::{bootstrap, js_module};
-use deft::element::{Element, Widget, ElementDelegate, ElementWeak};
+use deft::ui::{Element, Widget, ElementDelegate, ElementWeak};
 use deft::js::js_engine::JsEngine;
 use deft::render::RenderFn;
 use quick_js::loader::{FsJsModuleLoader, JsModuleLoader};

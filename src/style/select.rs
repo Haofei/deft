@@ -1,4 +1,4 @@
-use crate::element::Element;
+use crate::ui::Element;
 use crate::some_or_return;
 use anyhow::{anyhow, Error};
 use cssparser::{self, CowRcStr, ParseError, SourceLocation, ToCss};
@@ -229,7 +229,7 @@ impl selectors::Element for StyleElement {
     {
         match pseudo {
             PseudoClass::Focus => self.is_focused(),
-            PseudoClass::Hover => self.hover,
+            PseudoClass::Hover => self.style.hover,
             PseudoClass::Unsupported(_) => false,
         }
     }
@@ -416,9 +416,9 @@ impl Selector {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::element::button::Button;
-    use crate::element::container::Container;
-    use crate::element::{Element, Widget};
+    use crate::ui::button::Button;
+    use crate::ui::container::Container;
+    use crate::ui::{Element, Widget};
     use crate::style::select::Selectors;
 
     #[test]

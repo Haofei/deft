@@ -28,7 +28,7 @@ use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
 use winit::platform::android::ActiveEventLoopExtAndroid;
 use winit::window::WindowId;
-use crate::element::CSS_MANAGER;
+use crate::ui::CSS_MANAGER;
 use crate::ext::ext_worker::Worker;
 
 #[derive(Debug)]

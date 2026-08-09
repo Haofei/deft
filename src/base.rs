@@ -1,12 +1,10 @@
 use crate as deft;
-use crate::element::Element;
-use crate::ext::common::create_event_handler;
+use crate::ui::Element;
 use crate::js::js_serde::JsValueSerializer;
 use crate::js::{FromJsValue, ToJsValue};
 use crate::number::DeNan;
 use crate::{event, js_deserialize, js_serialize, some_or_return};
 use anyhow::Error;
-use log::error;
 use quick_js::{JsValue, ValueError};
 use serde::{Deserialize, Serialize};
 use skia_safe::Path;
@@ -340,23 +338,6 @@ impl EventContext {
     }
 }
 
-#[deprecated]
-pub struct Event {
-    pub event_type: String,
-    pub detail: Box<dyn EventDetail>,
-    pub context: EventContext,
-}
-
-impl Event {
-    pub fn new<T: EventDetail>(event_type: &str, detail: T) -> Self {
-        Self {
-            event_type: event_type.to_string(),
-            detail: Box::new(detail),
-            context: EventContext::new(),
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaretDetail {
@@ -400,8 +381,6 @@ impl CaretDetail {
     }
 }
 
-pub type EventHandler = dyn FnMut(&mut Event);
-
 pub type BoxEventListener = Box<dyn FnMut(&mut event::Event, &mut EventContext)>;
 
 pub type BoxJsEventListenerFactory =
@@ -416,7 +395,6 @@ pub trait EventListener<T> {
 }
 
 pub struct EventRegistration {
-    listeners: HashMap<String, Vec<(u32, Box<EventHandler>)>>,
     next_listener_id: u32,
     typed_listeners:
         HashMap<TypeId, Vec<(u32, Box<dyn FnMut(&mut event::Event, &mut EventContext)>)>>,
@@ -428,7 +406,6 @@ impl EventRegistration {
     pub fn new() -> Self {
         Self {
             next_listener_id: 1,
-            listeners: HashMap::new(),
             typed_listeners: HashMap::new(),
             listener_types: HashMap::new(),
             default_behavior_handlers: HashMap::new(),
@@ -524,64 +501,10 @@ impl EventRegistration {
         }
     }
 
-    pub fn add_event_listener(&mut self, event_type: &str, handler: Box<EventHandler>) -> u32 {
-        let id = self.next_listener_id;
-        self.next_listener_id += 1;
-        if !self.listeners.contains_key(event_type) {
-            let lst = Vec::new();
-            self.listeners.insert(event_type.to_string(), lst);
-        }
-        let listeners = self.listeners.get_mut(event_type).unwrap();
-        listeners.push((id, handler));
-        id
+    pub fn remove_event_listener(&mut self, _event_type: &str, _id: u32) {
+        //TODO fix caller
     }
 
-    pub fn bind_event_listener<T: 'static, F: FnMut(&mut EventContext, &mut T) + 'static>(
-        &mut self,
-        event_type: &str,
-        mut handler: F,
-    ) -> u32 {
-        self.add_event_listener(
-            event_type,
-            Box::new(move |e| {
-                if let Some(me) = e.detail.raw_mut().downcast_mut::<T>() {
-                    handler(&mut e.context, me);
-                }
-            }),
-        )
-    }
-
-    pub fn remove_event_listener(&mut self, event_type: &str, id: u32) {
-        if let Some(listeners) = self.listeners.get_mut(event_type) {
-            listeners.retain(|(i, _)| *i != id);
-        }
-    }
-
-    pub fn emit_event(&mut self, event: &mut Event) {
-        if let Some(listeners) = self.listeners.get_mut(&event.event_type) {
-            for it in listeners {
-                (it.1)(event);
-            }
-        }
-    }
-}
-
-impl EventRegistration {
-    pub fn add_js_event_listener(&mut self, event_type: &str, callback: JsValue) -> i32 {
-        let handler = create_event_handler(event_type, callback);
-        let id = self.add_event_listener(
-            event_type,
-            Box::new(move |e| match e.detail.create_js_value() {
-                Ok(ev) => {
-                    handler(&mut e.context, ev);
-                }
-                Err(e) => {
-                    error!("Failed to convert rust object to js value: {}", e);
-                }
-            }),
-        );
-        id as i32
-    }
 }
 
 impl Rect {

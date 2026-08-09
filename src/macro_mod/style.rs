@@ -4,12 +4,19 @@ macro_rules! set_style {
         use crate::HashMap;
         let mut style = Vec::new();
         $(
-            if let Some(p) = crate::element::FixedStyleProp::parse(stringify!($key), $value) {
+            if let Some(p) = crate::ui::FixedStyleProp::parse(stringify!($key), $value) {
                style.push(p);
             } else {
                 eprintln!("invalid key:{}", stringify!($key));
             }
         )*
         $element.set_style_props(style);
+    };
+}
+
+#[macro_export]
+macro_rules! style {
+    ($value: expr) => {
+        deft::style::parsed_styles::ParsedStyles::from_string($value).expect("invalid style")
     };
 }

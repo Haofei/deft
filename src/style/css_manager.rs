@@ -1,5 +1,5 @@
 use crate::base::{Id, IdKey};
-use crate::element::Element;
+use crate::ui::Element;
 use crate::style::select::{Selector, Selectors};
 use anyhow::{anyhow, Error};
 use simplecss::StyleSheet;
@@ -143,8 +143,8 @@ impl CssManager {
 
 #[cfg(test)]
 mod tests {
-    use crate::element::button::Button;
-    use crate::element::container::Container;
+    use crate::ui::button::Button;
+    use crate::ui::container::Container;
     use crate::style::css_manager::CssManager;
 
     #[test]
