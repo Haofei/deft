@@ -1,4 +1,3 @@
-use crate::base::{UnsafeFnMut, UnsafeFnOnce};
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
@@ -49,37 +48,6 @@ pub enum JsEvent {
 #[derive(Debug)]
 pub struct JsEventLoopClosedError {}
 
-pub struct JsEventLoopCallback {
-    event_loop_proxy: JsEventLoopProxy,
-    callback: Option<UnsafeFnOnce>,
-}
-
-impl JsEventLoopCallback {
-    pub fn call(mut self) {
-        let callback = self.callback.take().unwrap();
-        self.event_loop_proxy
-            .schedule_macro_task(callback.into_box())
-            .unwrap();
-    }
-}
-
-#[derive(Clone)]
-pub struct JsEventLoopFnMutCallback<P> {
-    event_loop_proxy: JsEventLoopProxy,
-    callback: Arc<Mutex<UnsafeFnMut<P>>>,
-}
-
-impl<P: Send + Sync + 'static> JsEventLoopFnMutCallback<P> {
-    pub fn call(&mut self, param: P) {
-        let cb = self.callback.clone();
-        self.event_loop_proxy
-            .schedule_macro_task(move || {
-                let mut cb = cb.lock().unwrap();
-                (cb.callback)(param);
-            })
-            .unwrap();
-    }
-}
 
 pub fn js_init_event_loop<
     F: FnMut(JsEvent) -> Result<(), JsEventLoopClosedError> + Send + Sync + 'static,
@@ -110,26 +78,4 @@ pub fn js_create_event_loop_proxy() -> JsEventLoopProxy {
             .expect("Attempting to use event loop in non-main thread");
         el.clone()
     })
-}
-
-pub fn js_create_event_loop_callback<F: FnOnce() + 'static>(callback: F) -> JsEventLoopCallback {
-    let callback = unsafe { UnsafeFnOnce::new(callback) };
-    let event_loop_proxy = js_create_event_loop_proxy();
-    JsEventLoopCallback {
-        event_loop_proxy,
-        callback: Some(callback),
-    }
-}
-
-pub fn js_create_event_loop_fn_mut<P: Send + Sync, F: FnMut(P) + 'static>(
-    callback: F,
-) -> JsEventLoopFnMutCallback<P> {
-    let fn_mut = UnsafeFnMut {
-        callback: Box::new(callback),
-    };
-    let event_loop_proxy = js_create_event_loop_proxy();
-    JsEventLoopFnMutCallback {
-        event_loop_proxy,
-        callback: Arc::new(Mutex::new(fn_mut)),
-    }
 }

@@ -3,7 +3,7 @@ use crate::app::{App, IApp};
 use crate::base::{EventContext, EventListener, EventRegistration};
 use crate::{bind_js_event_listener, js_module};
 use crate::ext::service::Service;
-use crate::js::js_event_loop::{js_create_event_loop_fn_mut, js_is_in_event_loop, JsEvent};
+use crate::js::js_event_loop::{js_is_in_event_loop, JsEvent};
 use crate::js::JsError;
 use crate::js_weak_value;
 use deft_macros::{js_methods, mrc_object, event};
@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Error;
 use std::sync::{Arc, Mutex};
+use crate::event_loop::create_event_loop_fn_mut;
 
 thread_local! {
     pub static JS_WORKDERS: RefCell<HashMap<u32, Worker >> = RefCell::new(HashMap::new());
@@ -139,7 +140,7 @@ impl Worker {
 
         if js_is_in_event_loop() {
             let js_worker = js_worker.clone();
-            let mut cb = js_create_event_loop_fn_mut(move |msg: MessageData| {
+            let mut cb = create_event_loop_fn_mut(move |msg: MessageData| {
                 let mut js_worker = js_worker.clone();
                 let _ = js_worker.receive_message(msg);
             });

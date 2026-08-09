@@ -16,7 +16,7 @@ use crate::ui::util::get_tree_level;
 use crate::ui::{Element, ElementParent, JsWidget};
 use crate::error::{DeftError, DeftResult};
 use crate::event::{build_modifier, named_key_to_str, str_to_named_key, BlurEvent, ClickEvent, ClickEventListener, ContextMenuEvent, DragOverEvent, DragStartEvent, DropEvent, DroppedFileEvent, FocusEvent, FocusShiftEvent, HoveredFileEvent, KeyDownEvent, KeyEventDetail, KeyUpEvent, MouseDownEvent, MouseEnterEvent, MouseLeaveEvent, MouseMoveEvent, MouseUpEvent, MouseWheelEvent, PreeditEvent, TextInputEvent, TouchCancelEvent, TouchEndEvent, TouchMoveEvent, TouchStartEvent, WheelEvent, KEY_MOD_ALT, KEY_MOD_CTRL, KEY_MOD_META, KEY_MOD_SHIFT};
-use crate::event_loop::run_with_event_loop;
+use crate::event_loop::run_with_app_event_loop;
 use crate::ext::ext_window::{
     WindowAttrs, MODAL_TO_OWNERS, WINDOWS, WINDOW_TYPE_MENU, WINDOW_TYPE_NORMAL, WINIT_TO_WINDOW,
 };
@@ -1804,7 +1804,7 @@ impl Window {
         attributes: WindowAttributes,
         backend_types: &Vec<RenderBackendType>,
     ) -> SkiaWindow {
-        run_with_event_loop(|el| {
+        run_with_app_event_loop(|el| {
             debug!("render backends: {:?}", backend_types);
             for bt in backend_types {
                 let init_attributes = attributes.clone().with_visible(false);

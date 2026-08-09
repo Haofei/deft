@@ -1,6 +1,6 @@
 use crate::base::{Rect, ResultWaiter};
 use crate::event_loop::{
-    init_event_loop_proxy, run_event_loop_task, run_with_event_loop, AppEventProxy,
+    init_app_event_loop_proxy, run_app_event_loop_task, run_with_app_event_loop, AppEventProxy,
 };
 use crate::ext::ext_localstorage::localstorage;
 use crate::ext::ext_window::WINDOWS;
@@ -118,7 +118,7 @@ impl WinitApp {
         let mut js_engine = JsEngine::get();
         js_engine.register_module::<Worker>("deft:core:worker").unwrap();
         js_engine.eval_module(include_str!("./js/deft.js"), "deft").unwrap();
-        init_event_loop_proxy(event_loop_proxy.clone());
+        init_app_event_loop_proxy(event_loop_proxy.clone());
         let _ = js_init_event_loop(move |js_event| {
             let _ = event_loop_proxy
                 .send_event(AppEvent::JsEvent(js_event))
@@ -139,7 +139,7 @@ impl WinitApp {
 
 impl ApplicationHandler<AppEventPayload> for WinitApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        run_event_loop_task(event_loop, move || {
+        run_app_event_loop_task(event_loop, move || {
             let uninitialized = WINDOWS.with(|m| m.borrow().is_empty());
             if uninitialized {
                 debug_time!("js init time");
@@ -157,7 +157,7 @@ impl ApplicationHandler<AppEventPayload> for WinitApp {
         });
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEventPayload) {
-        run_event_loop_task(event_loop, move || {
+        run_app_event_loop_task(event_loop, move || {
             match event.event {
                 AppEvent::BindWindow(id) => {
                     debug!("bindWindow {} Start", id);
@@ -217,7 +217,7 @@ impl ApplicationHandler<AppEventPayload> for WinitApp {
         event: WindowEvent,
     ) {
         // debug!("onWindowEvent: {:?}, {:?}", &window_id, event);
-        run_event_loop_task(event_loop, move || {
+        run_app_event_loop_task(event_loop, move || {
             self.js_engine.handle_window_event(window_id, event);
             self.execute_pending_jobs();
         });
@@ -230,14 +230,14 @@ impl ApplicationHandler<AppEventPayload> for WinitApp {
         event: DeviceEvent,
     ) {
         // debug!("onDeviceEvent: {:?}", event);
-        run_event_loop_task(event_loop, move || {
+        run_app_event_loop_task(event_loop, move || {
             self.js_engine.handle_device_event(device_id, event);
             self.execute_pending_jobs();
         });
     }
 
     fn reopen(&mut self, event_loop: &ActiveEventLoop, has_visible: bool) {
-        run_event_loop_task(event_loop, move || {
+        run_app_event_loop_task(event_loop, move || {
             self.js_engine.handle_reopen(has_visible);
         })
     }
@@ -247,7 +247,7 @@ impl ApplicationHandler<AppEventPayload> for WinitApp {
 pub fn exit_app(_code: i32) -> Result<(), Error> {
     //TODO use code from parameter
     localstorage::cleanup().unwrap();
-    run_with_event_loop(|el| {
+    run_with_app_event_loop(|el| {
         el.exit();
     });
     Ok(())

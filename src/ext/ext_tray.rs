@@ -1,6 +1,6 @@
 use crate as deft;
 use crate::base::{EventContext, EventListener, EventRegistration};
-use crate::event_loop::{create_event_loop_fn_mut, create_event_loop_proxy, AppEventProxy};
+use crate::event_loop::{create_event_loop_fn_mut};
 use crate::{bind_js_event_listener, js_deserialize, js_module, js_value};
 use anyhow::Error;
 use deft_macros::{event, js_methods, mrc_object};
@@ -22,7 +22,6 @@ pub struct ActivateEvent;
 
 #[mrc_object]
 pub struct SystemTray {
-    event_loop_proxy: AppEventProxy,
     event_registration: EventRegistration,
     id: u32,
     tray_impl: Tray,
@@ -38,18 +37,17 @@ js_module!(SystemTray, include_str!("./system-tray.js"));
 impl SystemTray {
     #[js_func]
     pub fn create(id: String) -> Result<SystemTray, Error> {
-        let tray = SystemTray::create_tray(&id, create_event_loop_proxy());
+        let tray = SystemTray::create_tray(&id);
         Ok(tray)
     }
 
-    fn create_tray(tray_id: &str, event_loop_proxy: AppEventProxy) -> Self {
+    fn create_tray(tray_id: &str) -> Self {
         let inner_id = NEXT_TRAY_ID.get();
         NEXT_TRAY_ID.set(inner_id + 1);
 
         let tray_impl = Tray::new(tray_id);
 
         let mut inst = SystemTrayData {
-            event_loop_proxy,
             event_registration: EventRegistration::new(),
             id: inner_id,
             tray_impl,

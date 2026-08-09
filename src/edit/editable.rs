@@ -5,7 +5,7 @@ use crate::canvas_util::CanvasHelper;
 use crate::edit::edit_history::{EditDetail, EditHistory};
 use crate::ui::{Element, Widget, ElementDelegate, ElementWeak};
 use crate::event::{BlurEventListener, CaretChangeEvent, FocusEventListener, KeyDownEventListener, KeyEventDetail, MouseDownEventListener, MouseLeaveEventListener, PreeditEventListener, ScrollEventListener, TextChangeEvent, TextInputEventListener, TextUpdateEvent, KEY_MOD_CTRL, KEY_MOD_SHIFT};
-use crate::event_loop::create_event_loop_proxy;
+use crate::event_loop::{create_app_event_loop_proxy};
 use crate::js::{FromJsValue, ToJsValue};
 use crate::number::DeNan;
 use crate::render::RenderFn;
@@ -179,7 +179,7 @@ impl EditableVar {
         let el = ok_or_return!(self.element.upgrade());
         if let Some(window) = el.get_window() {
             if let Ok(f) = window.upgrade() {
-                let elp = create_event_loop_proxy();
+                let elp = create_app_event_loop_proxy();
                 elp.send_event(AppEvent::ShowSoftInput(f.get_id())).unwrap();
             }
         }
@@ -194,7 +194,7 @@ impl EditableVar {
             let mut el = ok_or_return!(self.element.upgrade());
             if let Some(window) = el.get_window() {
                 if let Ok(f) = window.upgrade() {
-                    let elp = create_event_loop_proxy();
+                    let elp = create_app_event_loop_proxy();
                     elp.send_event(AppEvent::HideSoftInput(f.get_id())).unwrap();
                 }
             }

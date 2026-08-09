@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
 use winit::event_loop::{ActiveEventLoop, EventLoopClosed, EventLoopProxy};
+use crate::js::js_event_loop::{js_create_event_loop_proxy, JsEventLoopProxy};
 
 thread_local! {
     pub static ACTIVE_EVENT_LOOP: Cell<*const ActiveEventLoop> = Cell::new(null_mut());
@@ -34,23 +35,21 @@ impl AppEventProxy {
 }
 
 pub struct EventLoopCallback {
-    event_loop_proxy: AppEventProxy,
+    event_loop_proxy: JsEventLoopProxy,
     callback: Option<UnsafeFnOnce>,
 }
 
 impl EventLoopCallback {
     pub fn call(mut self) {
         let callback = self.callback.take().unwrap();
-        self.event_loop_proxy
-            .send_event(AppEvent::Callback(Box::new(|| {
-                callback.call();
-            })))
-            .unwrap();
+        self.event_loop_proxy.schedule_macro_task(move || {
+            callback.call();
+        }).unwrap();
     }
 }
 
 pub struct EventLoopFnMutCallback<P> {
-    event_loop_proxy: AppEventProxy,
+    event_loop_proxy: JsEventLoopProxy,
     callback: Arc<Mutex<UnsafeFnMut<P>>>,
 }
 
@@ -68,10 +67,10 @@ impl<P: Send + Sync + 'static> EventLoopFnMutCallback<P> {
         let cb = self.callback.clone();
         let _ = self
             .event_loop_proxy
-            .send_event(AppEvent::Callback(Box::new(move || {
+            .schedule_macro_task(move || {
                 let mut cb = cb.lock().unwrap();
                 (cb.callback)(param);
-            })));
+            });
     }
 }
 
@@ -97,13 +96,13 @@ pub fn create_event_loop_fn_mut<P: Send + Sync, F: FnMut(P) + 'static>(
     }
 }
 
-pub fn run_event_loop_task<F: FnOnce()>(event_loop: &ActiveEventLoop, callback: F) {
+pub fn run_app_event_loop_task<F: FnOnce()>(event_loop: &ActiveEventLoop, callback: F) {
     ACTIVE_EVENT_LOOP.set(event_loop as *const ActiveEventLoop);
     callback();
     ACTIVE_EVENT_LOOP.set(null_mut());
 }
 
-pub fn run_with_event_loop<R, F: FnOnce(&ActiveEventLoop) -> R>(callback: F) -> R {
+pub fn run_with_app_event_loop<R, F: FnOnce(&ActiveEventLoop) -> R>(callback: F) -> R {
     let el = ACTIVE_EVENT_LOOP.get();
     unsafe {
         if el == null_mut() {
@@ -113,13 +112,18 @@ pub fn run_with_event_loop<R, F: FnOnce(&ActiveEventLoop) -> R>(callback: F) -> 
     }
 }
 
-pub fn init_event_loop_proxy(elp: AppEventProxy) {
+pub fn init_app_event_loop_proxy(elp: AppEventProxy) {
     STATIC_EVENT_LOOP_PROXY.with_borrow_mut(move |m| {
         m.replace(elp);
     })
 }
 
-pub fn create_event_loop_proxy() -> AppEventProxy {
+
+pub fn create_event_loop_proxy() -> JsEventLoopProxy {
+    js_create_event_loop_proxy()
+}
+
+pub fn create_app_event_loop_proxy() -> AppEventProxy {
     STATIC_EVENT_LOOP_PROXY.with_borrow(|p| {
         p.as_ref()
             .expect("Failed to create event loop proxy")

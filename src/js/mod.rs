@@ -1,7 +1,7 @@
 pub mod js_binding;
 pub mod js_deserialze;
 pub mod js_engine;
-pub mod js_event_loop;
+pub(crate) mod js_event_loop;
 pub mod js_runtime;
 pub mod js_serde;
 pub mod js_value_util;

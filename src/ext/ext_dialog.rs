@@ -1,5 +1,4 @@
 use crate as deft;
-use crate::js::js_event_loop::js_create_event_loop_fn_mut;
 use crate::js_module;
 use crate::js::JsError;
 use crate::js_deserialize;
@@ -10,6 +9,7 @@ use quick_js::JsValue;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use serde::{Deserialize, Serialize};
 use std::thread;
+use crate::event_loop::create_event_loop_fn_mut;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -43,7 +43,7 @@ impl dialog {
 
         let mut success = {
             let callback = callback.clone();
-            js_create_event_loop_fn_mut(move |path_str_list: Vec<String>| {
+            create_event_loop_fn_mut(move |path_str_list: Vec<String>| {
                 let path_str_list = path_str_list
                     .into_iter()
                     .map(|it| JsValue::String(it))
@@ -52,7 +52,7 @@ impl dialog {
                     .call_as_function(vec![JsValue::Bool(true), JsValue::Array(path_str_list)]);
             })
         };
-        let mut fail = js_create_event_loop_fn_mut(move |error: String| {
+        let mut fail = create_event_loop_fn_mut(move |error: String| {
             let _ = callback.call_as_function(vec![JsValue::Bool(false), JsValue::String(error)]);
         });
 
