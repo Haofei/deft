@@ -30,7 +30,8 @@ impl Image {
         self.update_img(ImageObject::from_svg_bytes(svg));
     }
 
-    fn update_img(&mut self, img: ImageObject) {
+    fn update_img(&mut self, mut img: ImageObject) {
+        img.set_color(self.el.style.get_color());
         *self.img.lock().unwrap() = img;
         self.el.mark_dirty(true);
     }
