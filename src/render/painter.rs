@@ -285,8 +285,8 @@ impl ElementPainter {
     }
 
     fn draw_element_paint_object(&mut self, painter: &Painter, node: &mut ElementPO) {
-        let width = node.width;
-        let height = node.height;
+        let width = node.style.bounds().width;
+        let height = node.style.bounds().height;
         //TODO fix clip
         // node.clip_chain.apply(canvas);
         // canvas.concat(&node.total_matrix);
@@ -300,7 +300,7 @@ impl ElementPainter {
             // draw padding box and content box
             canvas.save();
             if width > 0.0 && height > 0.0 {
-                let (border_top_width, _, _, border_left_width) = node.border_width;
+                let (border_top_width, _, _, border_left_width) = node.style.border_width();
                 // let (padding_top, _, _, padding_left) = element.get_padding();
                 // draw content box
                 canvas.translate((border_left_width, border_top_width));

@@ -388,7 +388,7 @@ impl Element {
     }
 
     pub fn get_max_scroll_left(&self) -> f32 {
-        let content_bounds = self.get_content_bounds();
+        let content_bounds = self.style.computed().content_bounds();
         let width = content_bounds.width;
         (self.get_real_content_size().0 - width).max(0.0)
     }
@@ -524,14 +524,9 @@ impl Element {
         }
     }
 
-    /// bounds relative to parent
-    pub fn get_bounds(&self) -> base::Rect {
-        self.style.get_bounds()
-    }
-
     pub fn apply_transform(&self, mc: &mut MatrixCalculator) {
-        if let Some(tf) = self.style.get_transform() {
-            let bounds = self.get_bounds();
+        if let Some(tf) = self.style.computed().transform() {
+            let bounds = self.style.computed().bounds();
             mc.translate((bounds.width / 2.0, bounds.height / 2.0));
             tf.apply(bounds.width, bounds.height, mc);
             mc.translate((-bounds.width / 2.0, -bounds.height / 2.0));
@@ -543,25 +538,9 @@ impl Element {
         self.style.get_real_content_size()
     }
 
-    /// content bounds relative to self(border box)
-    pub fn get_content_bounds(&self) -> base::Rect {
-        self.style.get_content_bounds()
-    }
-
-    pub fn get_origin_content_bounds(&self) -> base::Rect {
-        let (t, r, b, l) = self.get_padding();
-        let bounds = self.get_origin_bounds();
-        base::Rect::new(
-            bounds.x + l,
-            bounds.y + t,
-            bounds.width - l - r,
-            bounds.height - t - b,
-        )
-    }
-
     /// bounds relative to root node
     pub fn get_origin_bounds(&self) -> base::Rect {
-        let b = self.get_bounds();
+        let b = self.style.computed().bounds();
         return if let Some(p) = self.get_parent() {
             let pob = p.get_origin_bounds();
             let x = pob.x + b.x - p.style.get_scroll_left();
@@ -663,15 +642,6 @@ impl Element {
         // }
     }
 
-    pub fn get_border_width(&self) -> (f32, f32, f32, f32) {
-        self.style.get_border_width()
-    }
-
-    /// Return the padding of element (order: Top, Right, Bottom, Left)
-    pub fn get_padding(&self) -> (f32, f32, f32, f32) {
-        self.style.get_padding()
-    }
-
     #[js_func]
     pub fn set_style(&mut self, style: ParsedStyles) {
         self.style.set_style(style);
@@ -761,7 +731,7 @@ impl Element {
         } else {
             ctx.font_size
         };
-        if self.style.get_font_size() != px {
+        if self.style.computed().font_size() != px {
             self.style.set_font_size(px);
             self.delegate.handle_style_changed(StylePropKey::FontSize);
         }
@@ -941,9 +911,9 @@ impl Element {
 
     pub fn get_children_viewport(&self) -> Option<Rect> {
         //TODO support overflow:visible
-        let border = self.get_border_width();
+        let border = self.style.computed().border_width();
         let children_decoration = self.style.get_children_decoration();
-        let bounds = self.get_bounds();
+        let bounds = self.style.computed().bounds();
         let x = border.3 + children_decoration.3;
         let y = border.0 + children_decoration.0;
         let right = bounds.width - border.1 - children_decoration.1;
@@ -962,8 +932,8 @@ impl Element {
     }
 
     pub fn get_border_path_mut(&mut self) -> BorderPath {
-        let bounds = self.get_bounds();
-        let border_widths = self.get_border_width();
+        let bounds = self.style.computed().bounds();
+        let border_widths = self.style.computed().border_width();
         let border_widths = [
             border_widths.0,
             border_widths.1,
@@ -973,7 +943,7 @@ impl Element {
         let bp = BorderPath::new(
             bounds.width,
             bounds.height,
-            self.style.get_border_radius(),
+            self.style.computed().border_radius(),
             border_widths,
         );
         if !self.border_path.is_same(&bp) {

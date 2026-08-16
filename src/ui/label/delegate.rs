@@ -81,33 +81,33 @@ impl ElementDelegate for LabelDelegate {
         let element = ok_or_return!(element.upgrade());
         match key {
             StylePropKey::Color => {
-                let color = element.style.get_color();
+                let color = element.style.computed().color();
                 self.text_box.set_color(color);
                 //TODO optimize dont relayout
                 self.make_layout_invalid();
             }
             StylePropKey::FontSize => {
-                let font_size = element.style.get_font_size();
+                let font_size = element.style.computed().font_size();
                 self.text_box.set_font_size(font_size);
                 self.make_layout_invalid();
             }
             StylePropKey::FontFamily => {
-                let font_families = element.style.get_font_family().clone();
+                let font_families = element.style.computed().font_family().clone();
                 self.text_box.set_font_families(font_families);
                 self.make_layout_invalid();
             }
             StylePropKey::FontWeight => {
-                let font_weight = element.style.get_font_weight();
+                let font_weight = element.style.computed().font_weight();
                 self.text_box.set_font_weight(font_weight);
                 self.make_layout_invalid();
             }
             StylePropKey::FontStyle => {
-                let font_style = element.style.get_font_style();
+                let font_style = element.style.computed().font_style().clone();
                 self.text_box.set_font_style(font_style);
                 self.make_layout_invalid();
             }
             StylePropKey::LineHeight => {
-                let line_height = element.style.get_line_height();
+                let line_height = element.style.computed().line_height();
                 self.text_box.set_line_height(line_height);
                 self.make_layout_invalid();
             }
@@ -117,7 +117,7 @@ impl ElementDelegate for LabelDelegate {
 
     fn render(&mut self) -> RenderFn {
         let el = ok_or_return!(self.element.upgrade(), RenderFn::empty());
-        let (pt, _, _, pl) = el.get_padding();
+        let (pt, _, _, pl) = el.style.computed().padding();
         let mut text_renderer = self.text_box.render();
         RenderFn::new(move |painter| {
             painter.canvas.translate((pl, pt));

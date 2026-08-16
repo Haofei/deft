@@ -46,13 +46,13 @@ impl LayoutNode {
         Ok(self.state._yn.clone())
     }
 
-    pub fn get_padding(&self) -> anyhow::Result<[f32; 4]> {
-        Ok([
+    pub fn get_padding(&self) -> anyhow::Result<(f32, f32, f32, f32)> {
+        Ok((
             self.state._yn.get_layout_padding_top().de_nan(0.0),
             self.state._yn.get_layout_padding_right().de_nan(0.0),
             self.state._yn.get_layout_padding_bottom().de_nan(0.0),
             self.state._yn.get_layout_padding_left().de_nan(0.0),
-        ])
+        ))
     }
 
     pub fn get_shadow_size(&self) -> anyhow::Result<Option<(f32, f32)>> {
@@ -61,13 +61,13 @@ impl LayoutNode {
         Ok(r)
     }
 
-    pub fn get_border(&self) -> anyhow::Result<[f32; 4]> {
+    pub fn get_border_width(&self) -> anyhow::Result<(f32, f32, f32, f32)> {
         let state = &self.state;
         let bl = state._yn.get_layout_border_left().de_nan(0.0);
         let br = state._yn.get_layout_border_right().de_nan(0.0);
         let bt = state._yn.get_layout_border_top().de_nan(0.0);
         let bb = state._yn.get_layout_border_bottom().de_nan(0.0);
-        Ok([bt, br, bb, bl])
+        Ok((bt, br, bb, bl))
     }
 
     pub fn get_size(&self) -> anyhow::Result<[f32; 2]> {

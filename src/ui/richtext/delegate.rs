@@ -21,23 +21,23 @@ impl ElementDelegate for RichTextDelegate {
         let element = ok_or_return!(ew.upgrade());
         match key {
             StylePropKey::Color => {
-                self.text_box.set_color(element.style.get_color());
+                self.text_box.set_color(element.style.computed().color());
             }
             StylePropKey::FontSize => {
-                self.text_box.set_font_size(element.style.get_font_size());
+                self.text_box.set_font_size(element.style.computed().font_size());
             }
             StylePropKey::FontFamily => {
                 self.text_box
-                    .set_font_families(element.style.get_font_family().clone());
+                    .set_font_families(element.style.computed().font_family().clone());
             }
             StylePropKey::FontWeight => {
-                self.text_box.set_font_weight(element.style.get_font_weight());
+                self.text_box.set_font_weight(element.style.computed().font_weight());
             }
             StylePropKey::FontStyle => {
-                self.text_box.set_font_style(element.style.get_font_style());
+                self.text_box.set_font_style(element.style.computed().font_style().clone());
             }
             StylePropKey::LineHeight => {
-                self.text_box.set_line_height(element.style.get_line_height());
+                self.text_box.set_line_height(element.style.computed().line_height());
             }
             _ => {}
         }

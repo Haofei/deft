@@ -1,5 +1,4 @@
 use crate as deft;
-use crate::ui::Element;
 use crate::js::js_serde::JsValueSerializer;
 use crate::js::{FromJsValue, ToJsValue};
 use crate::number::DeNan;
@@ -668,10 +667,6 @@ impl Rect {
         self.width == 0.0 || self.height == 0.0
     }
 
-    pub fn to_origin_bounds(&self, node: &Element) -> Self {
-        let origin_bounds = node.get_origin_bounds();
-        self.translate(origin_bounds.x, origin_bounds.y)
-    }
 }
 
 pub struct UnsafeFnOnce {

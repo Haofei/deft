@@ -74,7 +74,7 @@ impl ElementDelegate for SelectDelegate {
     fn render(&mut self) -> RenderFn {
         let element_weak = self.element_weak.clone();
         let el = ok_or_return!(element_weak.upgrade(), RenderFn::empty());
-        let bounds = el.get_bounds();
+        let bounds = el.style.computed().bounds();
         let (img_width, img_height) = self.select_img.get_container_size();
         let y = (bounds.height - img_height) / 2.0;
         let x = bounds.width - img_width - y;
@@ -84,7 +84,7 @@ impl ElementDelegate for SelectDelegate {
         } else {
             None
         };
-        let (pt, _, _, pl) = el.get_padding();
+        let (pt, _, _, pl) = el.style.computed().padding();
         RenderFn::new(move |painter| {
             if let Some(pr) = &mut placeholder_renderer {
                 painter.canvas.session(|c| {
@@ -128,7 +128,7 @@ impl ElementDelegate for SelectDelegate {
         let mut el = ok_or_return!(element_weak.upgrade());
         match key {
             StylePropKey::Color => {
-                if self.select_img.set_color(el.style.get_color()) {
+                if self.select_img.set_color(el.style.computed().color()) {
                     el.mark_dirty(false);
                 }
             }
@@ -140,11 +140,10 @@ impl ElementDelegate for SelectDelegate {
 impl LayoutListener for SelectDelegate {
     fn after_layout(&mut self, bounds: &Rect) {
         let el = ok_or_return!(self.element_weak.upgrade());
-        let content_bounds = el.get_content_bounds();
+        let content_bounds = el.style.computed().content_bounds();
         let height = bounds.height - 4.0;
         self.select_img.set_container_size((height, height));
-        self.placeholder
-            .set_line_height(Some(content_bounds.height));
+        self.placeholder.set_line_height(content_bounds.height);
         self.placeholder.layout();
     }
 }

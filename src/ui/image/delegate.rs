@@ -22,7 +22,7 @@ impl ElementDelegate for ImageDelegate {
             StylePropKey::Color => {
                 let changed = {
                     let mut img = self.img.lock().unwrap();
-                    img.set_color(element.style.get_color())
+                    img.set_color(element.style.computed().color())
                 };
                 if changed {
                     self.element.mark_dirty(false);
@@ -40,7 +40,7 @@ impl ElementDelegate for ImageDelegate {
 impl LayoutListener for ImageDelegate {
     fn after_layout(&mut self, _bounds: &Rect) {
         let el = ok_or_return!(self.element.upgrade());
-        let bounds = el.get_content_bounds();
+        let bounds = el.style.computed().content_bounds();
         self.img.lock().unwrap().set_container_size((bounds.width, bounds.height));
     }
 }

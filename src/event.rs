@@ -1,5 +1,5 @@
 use crate as deft;
-use crate::base::{MouseDetail, Rect, TouchDetail};
+use crate::base::{MouseDetail, TouchDetail};
 use deft_macros::event;
 use serde::{Deserialize, Serialize};
 use std::any::{Any, TypeId};
@@ -845,6 +845,4 @@ pub struct HoveredFileEvent(pub String);
 pub struct CaretChangeEvent {
     pub row: usize,
     pub col: usize,
-    pub origin_bounds: Rect,
-    pub bounds: Rect,
 }

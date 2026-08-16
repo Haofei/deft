@@ -19,6 +19,7 @@ pub mod listener;
 pub mod parsed_styles;
 pub mod style_listener;
 pub mod measure;
+pub mod computed_style;
 
 use crate as deft;
 use crate::animation::css_actor::CssAnimationActor;
@@ -40,14 +41,14 @@ use anyhow::{anyhow, Error};
 use deft_macros::mrc_object;
 use quick_js::JsValue;
 use skia_safe::font_style::Weight;
-use skia_safe::{Color, Image, Matrix};
+use skia_safe::{Color, Matrix};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use bitflags::bitflags;
-use swash::Style;
 use yoga::{Align, Direction, Display, FlexDirection, Justify, Layout, Node, PositionType, Size, StyleUnit, Wrap};
 use crate::base;
+use crate::style::computed_style::{ComputedStyle, LayoutInfo};
 use crate::style::listener::{EmptyLayoutListener, LayoutListener};
 use crate::style::measure::LayoutMeasurer;
 use crate::style::parsed_styles::ParsedStyles;
@@ -129,13 +130,6 @@ macro_rules! define_style_props {
                     )*
                 }
              }
-        }
-
-        #[derive(Clone, Debug, PartialEq)]
-        pub enum ComputedStyleProp {
-            $(
-                $name($compute_type),
-            )*
         }
 
         #[derive(Clone, Hash, PartialEq, Eq, Copy, Debug)]
@@ -386,26 +380,14 @@ pub struct StyleNode {
     style_list: StyleList,
     yoga_node: NodeItem,
     children: Vec<StyleNode>,
-    size: (f32, f32),
+    computed: ComputedStyle,
     listener: Box<dyn LayoutListener>,
     children_decoration: (f32, f32, f32, f32),
 
-    // (inherited, computed)
-    border_radius: [f32; 4],
-    border_color: [Color; 4],
-    background_image: Option<Image>,
-    transform: Option<StyleTransform>,
     animation_params: AnimationParams,
     animation_instance: Option<AnimationInstance>,
     on_changed: Option<Box<dyn FnMut(StylePropKey)>>,
     resolved_style_props: HashMap<StylePropKey, ResolvedStyleProp>,
-    font_size: f32,
-    color: Color,
-    background_color: Color,
-    line_height: Option<f32>,
-    font_family: FontFamilies,
-    font_weight: Weight,
-    font_style: FontStyle,
     pub scrollable: Mrc<Scrollable>,
     pub(super) animation_style_props: HashMap<StylePropKey, FixedStyleProp>,
     applied_style: Styles,
@@ -427,23 +409,27 @@ impl StyleNode {
             animation_style_props: HashMap::new(),
             yoga_node: NodeItem::new(),
             children: Vec::new(),
-            border_radius: [0.0, 0.0, 0.0, 0.0],
-            border_color: [transparent, transparent, transparent, transparent],
-            background_image: None,
-            transform: None,
+            computed: ComputedStyle {
+                size: (0.0, 0.0),
+                border_radius: [0.0, 0.0, 0.0, 0.0],
+                border_color: [transparent, transparent, transparent, transparent],
+                background_image: None,
+                font_size: 12.0,
+                color: Color::new(0),
+                background_color: Color::new(0),
+                font_family: FontFamilies::default(),
+                font_weight: Weight::NORMAL,
+                font_style: FontStyle::Normal,
+                transform: None,
+                line_height: 12.0 * 1.2,
+                layout: LayoutInfo::default(),
+            },
+
             animation_instance: None,
             animation_params: AnimationParams::new(),
             on_changed: None,
             resolved_style_props: HashMap::new(),
-            font_size: 12.0,
-            color: Color::new(0),
-            background_color: Color::new(0),
-            line_height: None,
-            font_family: FontFamilies::default(),
-            font_weight: Weight::NORMAL,
-            font_style: FontStyle::Normal,
             scrollable: Mrc::new(scrollable),
-            size: (0.0, 0.0),
             listener: Box::new(EmptyLayoutListener {}),
             children_decoration: (0.0, 0.0, 0.0, 0.0),
             applied_style: Styles::new(),
@@ -717,6 +703,12 @@ impl StyleNode {
     }
 
     fn on_layout_update(&mut self) {
+        let ml = self.yoga_node.layout.get_layout().unwrap_or(Layout::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+        self.computed.layout = LayoutInfo {
+            border_width: self.yoga_node.layout.get_border_width().unwrap_or_default(),
+            padding: self.yoga_node.layout.get_padding().unwrap_or_default(),
+            bounds: Rect::from_layout(&ml),
+        };
         //TODO performance: maybe not changed?
         //TODO use origin bounds?
         let bounds = self.get_bounds();
@@ -782,8 +774,8 @@ impl StyleNode {
     fn update_shadow_recursively(&mut self) {
         if self.has_shadow() {
             let [width, height] = self.yoga_node.layout.get_size().unwrap_or_default();
-            if self.size != (width, height) {
-                self.size = (width, height);
+            if self.computed.size != (width, height) {
+                self.computed.size = (width, height);
                 self.compute_layout(width, height);
             }
         }
@@ -792,19 +784,19 @@ impl StyleNode {
         }
     }
 
+    //TODO remove
     pub fn get_border_width(&self) -> (f32, f32, f32, f32) {
-        let [t, r, b, l] = self.yoga_node.layout.get_border().unwrap_or_default();
-        (t, r, b, l)
+        self.yoga_node.layout.get_border_width().unwrap_or_default()
     }
 
+    //TODO remove
     pub fn get_padding(&self) -> (f32, f32, f32, f32) {
-        let [t, r, b, l] = self.yoga_node.layout.get_padding().unwrap_or_default();
-        (t, r, b, l)
+        self.yoga_node.layout.get_padding().unwrap_or_default()
     }
 
     pub fn get_content_bounds(&self) -> Rect {
-        let [t, r, b, l] = self.yoga_node.layout.get_padding().unwrap_or_default();
-        let [bt, br, bb, bl] = self.yoga_node.layout.get_border().unwrap_or_default();
+        let (t, r, b, l) = self.yoga_node.layout.get_padding().unwrap_or_default();
+        let (bt, br, bb, bl) = self.yoga_node.layout.get_border_width().unwrap_or_default();
         let [width, height] = self.yoga_node.layout.get_size().unwrap_or_default();
         // let (width, height) = self.with_container_node(|n| {
         //     (n.get_layout_width().de_nan(0.0), n.get_layout_height().de_nan(0.0))
@@ -941,56 +933,16 @@ impl StyleNode {
         }
     }
 
-    pub fn get_font_size(&self) -> f32 {
-        self.font_size
+    pub fn computed(&self) -> &ComputedStyle {
+        &self.computed
     }
 
     pub fn set_font_size(&mut self, font_size: f32) {
-        self.font_size = font_size;
-    }
-
-    pub fn get_color(&self) -> Color {
-        self.color
-    }
-
-    pub fn get_background_color(&self) -> Color {
-        self.background_color
-    }
-
-    pub fn get_line_height(&self) -> Option<f32> {
-        self.line_height
-    }
-
-    pub fn get_font_family(&self) -> &FontFamilies {
-        &self.font_family
-    }
-
-    pub fn get_font_weight(&self) -> Weight {
-        self.font_weight
-    }
-
-    pub fn get_font_style(&self) -> FontStyle {
-        self.font_style.clone()
+        self.computed.font_size = font_size;
     }
 
     pub fn get_children_decoration(&self) -> (f32, f32, f32, f32) {
         self.children_decoration
-    }
-
-    pub fn get_border_radius(&self) -> [f32; 4] {
-        self.border_radius
-    }
-
-    pub fn get_border_color(&self) -> [Color; 4] {
-        self.border_color
-    }
-
-    pub fn get_background_image(&self) -> &Option<Image> {
-        &self.background_image
-    }
-
-    pub fn get_transform(&self) -> &Option<StyleTransform> {
-        &self.transform
     }
 
     fn set_resolved_style_prop(
@@ -1009,11 +961,11 @@ impl StyleNode {
 
         match p {
             ResolvedStyleProp::Color(v) => {
-                self.color = v;
+                self.computed.color = v;
                 need_layout = false;
             }
             ResolvedStyleProp::BackgroundColor(value) => {
-                self.background_color = value;
+                self.computed.background_color = value;
                 need_layout = false;
             }
             ResolvedStyleProp::FontSize(_) => {
@@ -1022,16 +974,16 @@ impl StyleNode {
                 //TODO need_layout = false?
             }
             ResolvedStyleProp::FontFamily(value) => {
-                self.font_family = value;
+                self.computed.font_family = value;
             }
             ResolvedStyleProp::FontWeight(value) => {
-                self.font_weight = value;
+                self.computed.font_weight = value;
             }
             ResolvedStyleProp::FontStyle(value) => {
-                self.font_style = value;
+                self.computed.font_style = value;
             }
             ResolvedStyleProp::LineHeight(value) => {
-                self.line_height = value.to_px(length_ctx);
+                self.computed.line_height = value.to_px(length_ctx);
             }
             ResolvedStyleProp::BorderTopWidth(value) => {
                 self.set_border_width(&value, &vec![0], length_ctx);
@@ -1145,20 +1097,20 @@ impl StyleNode {
                 self.scrollable.horizontal_bar.set_strategy(scroll_strategy);
             }
             ResolvedStyleProp::BorderTopLeftRadius(value) => {
-                self.border_radius[0] = value.to_px(&length_ctx);
+                self.computed.border_radius[0] = value.to_px(&length_ctx);
             }
             ResolvedStyleProp::BorderTopRightRadius(value) => {
-                self.border_radius[1] = value.to_px(&length_ctx);
+                self.computed.border_radius[1] = value.to_px(&length_ctx);
             }
             ResolvedStyleProp::BorderBottomRightRadius(value) => {
-                self.border_radius[2] = value.to_px(&length_ctx);
+                self.computed.border_radius[2] = value.to_px(&length_ctx);
             }
             ResolvedStyleProp::BorderBottomLeftRadius(value) => {
-                self.border_radius[3] = value.to_px(&length_ctx);
+                self.computed.border_radius[3] = value.to_px(&length_ctx);
             }
             ResolvedStyleProp::Transform(value) => {
                 need_layout = false;
-                self.transform = Some(value);
+                self.computed.transform = Some(value);
             }
             ResolvedStyleProp::AnimationName(value) => {
                 need_layout = false;
@@ -1267,7 +1219,7 @@ impl StyleNode {
 
     fn set_border_color(&mut self, color: &Color, edges: &Vec<usize>) {
         for index in edges {
-            self.border_color[*index] = *color;
+            self.computed.border_color[*index] = *color;
         }
     }
 

@@ -85,8 +85,7 @@ impl EditableDelegate {
         let pos = self.get_caret_pixels_position()?;
         let win = el.get_window()?;
         let win = win.upgrade().ok()?;
-        //TOOD use transformed position
-        let el_offset = el.get_origin_bounds();
+        let el_offset = el.get_bounding_client_rect();
         let x = (el_offset.x + pos.x) as f64;
         let y = (el_offset.y + pos.bottom()) as f64;
         win.window.set_ime_cursor_area(
@@ -106,7 +105,7 @@ impl EditableDelegate {
 #[mrc_object]
 struct EditableDelegate {
     element: ElementWeak,
-    line_height: Option<f32>,
+    line_height: f32,
     multiple_line: bool,
     paragraph: TextBox,
     placeholder: TextBox,
@@ -118,7 +117,8 @@ struct EditableDelegate {
     rows: u32,
     disabled: bool,
     auto_height: bool,
-    last_layout_size: Option<(f32, Option<f32>)>,
+    //Note: (width, line_height)
+    last_layout_size: Option<(f32, f32)>,
     state: Arc<Mutex<EditableState>>,
 }
 
@@ -170,8 +170,8 @@ impl EditableDelegate {
 
     fn layout(&mut self, bounds: &Rect) {
         let element = ok_or_return!(self.element.upgrade());
-        let padding = element.get_padding();
-        let border = element.get_border_width();
+        let padding = element.style.computed().padding();
+        let border = element.style.computed().border_width();
         let mut line_height = self.line_height;
         let padding_box_width = bounds.width.de_nan(f32::INFINITY) - border.1 - border.3;
         let padding_box_height = bounds.height.de_nan(f32::INFINITY) - border.0 - border.2;
@@ -179,7 +179,7 @@ impl EditableDelegate {
         let mut layout_width = padding_box_width;
         if !self.multiple_line {
             let content_height = padding_box_height;
-            line_height = Some(content_height);
+            line_height = content_height;
             layout_width = f32::NAN;
         }
         let last_layout_size = Some((layout_width, line_height));
@@ -377,25 +377,11 @@ impl EditableDelegate {
     }
 
     fn emit_caret_change(&mut self) {
-        let element = ok_or_return!(self.element.upgrade());
-        let origin_bounds = element.get_origin_bounds();
-        let (border_top, _, _, border_left) = element.get_padding();
-        let (scroll_left, scroll_top) = element.style.scrollable.scroll_offset();
-
         let caret = self.paragraph.get_caret();
-        let bounds = match self.paragraph.get_char_rect(caret) {
-            None => return,
-            Some(rect) => rect.translate(-scroll_left, -scroll_top),
-        };
-        // bounds relative to entry
-        let origin_bounds =
-            bounds.translate(origin_bounds.x + border_left, origin_bounds.y + border_top);
 
         self.element.emit(CaretChangeEvent {
             row: caret.0,
             col: caret.1,
-            origin_bounds,
-            bounds,
         });
     }
 
@@ -888,7 +874,7 @@ impl Editable {
             paragraph,
             placeholder,
             multiple_line: false,
-            line_height: None,
+            line_height: 12.0 * 1.2,
             measure_called: false,
             element: ele.as_weak(),
             input_type: InputType::Text,
@@ -960,25 +946,25 @@ impl ElementDelegate for EditableDelegate {
         let element = ok_or_return!(element.upgrade());
         match key {
             StylePropKey::FontStyle => {
-                self.paragraph.set_font_style(element.style.get_font_style());
+                self.paragraph.set_font_style(element.style.computed().font_style().clone());
             }
             StylePropKey::FontSize => {
-                self.paragraph.set_font_size(element.style.get_font_size());
+                self.paragraph.set_font_size(element.style.computed().font_size());
             }
             StylePropKey::LineHeight => {
-                self.line_height = element.style.get_line_height();
+                self.line_height = element.style.computed().line_height();
             }
             StylePropKey::Color => {
-                self.paragraph.set_color(element.style.get_color());
+                self.paragraph.set_color(element.style.computed().color());
                 let mut state = self.state.lock().unwrap();
-                state.caret_paint.set_color(element.style.get_color());
+                state.caret_paint.set_color(element.style.computed().color());
             }
             StylePropKey::FontWeight => {
-                self.paragraph.set_font_weight(element.style.get_font_weight());
+                self.paragraph.set_font_weight(element.style.computed().font_weight());
             }
             StylePropKey::FontFamily => {
                 self.paragraph
-                    .set_font_families(element.style.get_font_family().clone());
+                    .set_font_families(element.style.computed().font_family().clone());
             }
             _ => {}
         }

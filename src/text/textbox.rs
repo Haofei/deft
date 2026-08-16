@@ -231,9 +231,9 @@ impl TextBox {
         }
     }
 
-    pub fn set_line_height(&mut self, line_height: Option<f32>) {
-        if self.params.line_height != line_height {
-            self.params.line_height = line_height;
+    pub fn set_line_height(&mut self, line_height: f32) {
+        if self.params.line_height != Some(line_height) {
+            self.params.line_height = Some(line_height);
             self.rebuild_paragraph();
         }
     }

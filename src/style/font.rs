@@ -32,14 +32,13 @@ pub enum LineHeightVal {
 }
 
 impl LineHeightVal {
-    pub fn to_px(&self, length_context: &LengthContext) -> Option<f32> {
-        let v = match self {
+    pub fn to_px(&self, length_context: &LengthContext) -> f32 {
+        match self {
             LineHeightVal::Length(l) => l.to_px(length_context),
             LineHeightVal::Percent(p) => length_context.font_size * p / 100.0,
             LineHeightVal::Number(n) => length_context.font_size * n,
-            LineHeightVal::Normal => return None,
-        };
-        Some(v)
+            LineHeightVal::Normal => length_context.font_size * 1.2,
+        }
     }
 }
 

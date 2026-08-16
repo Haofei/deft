@@ -1080,7 +1080,7 @@ impl Window {
 
     fn find_tooltip(node: &Element, x: f32) -> Option<(u32, String, Rect)> {
         if !node.tooltip.is_empty() {
-            let mut bounds = node.get_origin_bounds();
+            let mut bounds = node.get_bounding_client_rect();
             bounds.x = x;
             bounds.y -= 4.0;
             bounds.width = 1.0;
@@ -1223,7 +1223,7 @@ impl Window {
                 TouchPhase::Moved => "touchmove",
                 TouchPhase::Cancelled => "touchcancel",
             };
-            let (border_top, _, _, border_left) = node.get_border_width();
+            let (border_top, _, _, border_left) = node.style.computed().border_width();
 
             let offset_x = relative_x - border_left;
             let offset_y = relative_y - border_top;
@@ -1400,7 +1400,7 @@ impl Window {
             let (w, h) = match &root.parent {
                 ElementParent::None => (f32::NAN, f32::NAN),
                 ElementParent::Element(p) => {
-                    let p_bounds = p.upgrade().unwrap().get_content_bounds();
+                    let p_bounds = p.upgrade().unwrap().style.computed().content_bounds();
                     (p_bounds.width, p_bounds.height)
                 }
                 ElementParent::Window(_) => (width, height),
@@ -1466,8 +1466,8 @@ impl Window {
         for lr in layer_roots.deref_mut() {
             let body = &mut lr.body.element_mut();
             let length_ctx = LengthContext {
-                root: body.style.get_font_size(),
-                font_size: body.style.get_font_size(),
+                root: body.style.computed().font_size(),
+                font_size: body.style.computed().font_size(),
                 viewport_width,
                 viewport_height,
             };
@@ -1488,7 +1488,7 @@ impl Window {
             for i in 1..self.layer_roots.len() {
                 let lr = &mut self.layer_roots[i];
                 let (root, x, y) = (&mut lr.body, &mut lr.x, &mut lr.y);
-                let bounds = root.get_bounds();
+                let bounds = root.style.computed().bounds();
                 if x.is_nan() {
                     *x = (win_size.width - bounds.width) / 2.0;
                     *y = (win_size.height - bounds.height) / 2.0;
@@ -1767,7 +1767,7 @@ impl Window {
         let root = node.get_root_element();
         let render_tree = some_or_return!(self.render_tree.get(&root.get_eid()));
         let node_matrix = some_or_return!(render_tree.get_element_total_matrix(node));
-        let (border_top, _, _, border_left) = node.get_border_width();
+        let (border_top, _, _, border_left) = node.style.computed().border_width();
 
         //TODO maybe not inverted?
         let inverted_matrix = node_matrix.invert().unwrap();

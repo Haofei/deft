@@ -5,7 +5,7 @@ use crate::render::paint_object::{ElementPO, LayerPO};
 use crate::render::RenderFn;
 use crate::{some_or_continue, some_or_return};
 use skia_safe::Canvas;
-use skia_safe::{scalar, Color, Image, Matrix, Path, PathOp, Point, Vector};
+use skia_safe::{scalar, Matrix, Path, PathOp, Point, Vector};
 use skia_window::layer::Layer;
 use std::cell::Cell;
 use std::cmp::Ordering;
@@ -14,6 +14,7 @@ use std::mem;
 use yoga::PositionType;
 use crate::render::renderer::CpuRenderer;
 use crate::style::border_path::BorderPath;
+use crate::style::computed_style::ComputedStyle;
 
 thread_local! {
     pub static NEXT_UNIQUE_RECT_ID: Cell<u64> = Cell::new(1);
@@ -87,16 +88,11 @@ pub struct ElementObjectData {
     pub children_viewport: Option<Rect>,
     // pub layer_x: f32,
     // pub layer_y: f32,
-    pub border_color: [Color; 4],
     pub renderer: Box<dyn FnMut() -> RenderFn>,
-    pub background_image: Option<Image>,
-    pub background_color: Color,
-    pub border_width: (f32, f32, f32, f32),
-    pub width: f32,
-    pub height: f32,
     pub layer_object_idx: Option<usize>,
     pub element_id: u32,
     pub border_path: BorderPath,
+    pub style: ComputedStyle,
 }
 
 #[derive(Clone)]
@@ -217,10 +213,11 @@ impl RenderTree {
         y: f32,
     ) -> Option<(&ElementObjectData, f32, f32)> {
         let eod = &self.element_objects[lo.element_object_idx];
+        let (width, height) = (eod.style.bounds().width, eod.style.bounds().height);
         if x >= eod.coord.0
-            && x <= eod.coord.0 + eod.width
+            && x <= eod.coord.0 + width
             && y >= eod.coord.1
-            && y <= eod.coord.1 + eod.height
+            && y <= eod.coord.1 + height
         {
             for c in lo.children.iter().rev() {
                 let r = some_or_continue!(self.get_element_object_in_normal_nodes_by_pos_recurse(
@@ -237,25 +234,20 @@ impl RenderTree {
     }
 
     pub fn create_node(&mut self, element: &mut Element) {
-        let bounds = element.get_bounds();
+        let bounds = element.style.computed().bounds();
         let mut el = element.clone_element();
+        let style = element.style.computed().clone();
         let element_data = ElementObjectData {
             border_path: element.get_border_path_mut(),
             element_id: element.get_eid(),
             coord: (bounds.x, bounds.y),
             children_viewport: element.get_children_viewport(),
-            border_color: element.style.get_border_color(),
             renderer: Box::new(move || {
                 RenderFn::merge(vec![el.style.scrollable.render(), el.render()])
             }),
-            background_image: element.style.get_background_image().clone(),
-            background_color: element.style.get_background_color(),
-            border_width: element.get_border_width(),
-            width: bounds.width,
-            height: bounds.height,
-
             layer_object_idx: None,
             layer_coord: (0.0, 0.0),
+            style,
         };
         self.element_objects.push(element_data);
         element.render_object_idx = Some(self.element_objects.len() - 1);
@@ -265,7 +257,7 @@ impl RenderTree {
         // print_time!("rebuild render object");
         let old_layout_tree = mem::take(&mut self.layout_tree);
         let mut matrix_calculator = MatrixCalculator::new();
-        let bounds = element.get_bounds();
+        let bounds = element.style.computed().bounds();
         let rro = self.build_render_object(
             element,
             0.0,
@@ -365,7 +357,7 @@ impl RenderTree {
     ) -> Vec<RenderObject> {
         let mut children = Vec::new();
         for c in element.get_children() {
-            let child_bounds = c.get_bounds();
+            let child_bounds = c.style.computed().bounds();
             matrix_calculator.save();
             matrix_calculator.translate((child_bounds.x, child_bounds.y));
             let child_origin_x = origin_x + child_bounds.x;
@@ -398,7 +390,7 @@ impl RenderTree {
         layer_x: f32,
         layer_y: f32,
     ) -> Vec<RenderObject> {
-        let bounds = element.get_bounds();
+        let bounds = element.style.computed().bounds();
         let need_create_children_layer = Self::need_create_children_layer(element);
         if need_create_children_layer {
             let (scroll_left, scroll_top) = element.style.scrollable.scroll_offset();
@@ -536,10 +528,7 @@ impl RenderTree {
         let element_object_idx = element.render_object_idx.unwrap();
         // let mut border_path = element.create_border_path();
         let element_data = &mut self.element_objects[element_object_idx];
-        element_data.border_color = element.style.get_border_color();
-        element_data.background_image = element.style.get_background_image().clone();
-        element_data.background_color = element.style.get_background_color();
-        element_data.border_width = element.get_border_width();
+        element_data.style = element.style.computed().clone();
         element_data.coord = (bounds.x, bounds.y);
         element_data.layer_object_idx = Some(layer_object_idx);
         element_data.layer_coord = (layer_x, layer_y);
@@ -561,14 +550,19 @@ impl RenderTree {
     pub fn invalid_element(&mut self, element: &Element) {
         let render_object_idx = some_or_return!(element.render_object_idx);
         let eo = some_or_return!(self.element_objects.get(render_object_idx));
-        let bounds = Rect::from_xywh(eo.layer_coord.0, eo.layer_coord.1, eo.width, eo.height);
+        let bounds = Rect::from_xywh(
+            eo.layer_coord.0,
+            eo.layer_coord.1,
+            eo.style.bounds().width,
+            eo.style.bounds().height,
+        );
         let layer_idx = some_or_return!(eo.layer_object_idx);
         let lo = &mut self.layout_tree.layer_objects[layer_idx];
         lo.invalid(&bounds);
     }
 
     fn need_create_root_layer(element: &Element) -> bool {
-        if element.style.get_transform().is_some() {
+        if element.style.computed().transform().is_some() {
             return true;
         }
         let pos_type = element.style.get_position_type();
@@ -611,12 +605,13 @@ impl RenderTree {
         let children =
             self.build_paint_normal_nodes(&mut eod.children.clone(), viewport, invalid_rects);
         let eo = &mut self.element_objects[eod.element_object_idx];
+        let (width, height) = (eo.style.bounds().width, eo.style.bounds().height);
 
         let need_paint = invalid_rects.has_intersects(&Rect::from_xywh(
             eo.layer_coord.0,
             eo.layer_coord.1,
-            eo.width,
-            eo.height,
+            width,
+            height,
         ));
         let border_path = eo.border_path.get_paths().clone();
         let border_box_path = eo.border_path.get_box_path().clone().unwrap();
@@ -626,17 +621,12 @@ impl RenderTree {
             children_viewport: eo.children_viewport,
             border_path,
             border_box_path,
-            border_color: eo.border_color,
             render_fn: if need_paint {
                 Some((eo.renderer)())
             } else {
                 None
             },
-            background_image: eo.background_image.clone(),
-            background_color: eo.background_color,
-            border_width: eo.border_width,
-            width: eo.width,
-            height: eo.height,
+            style: eo.style.clone(),
             element_id: eo.element_id,
             need_paint,
         };

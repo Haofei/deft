@@ -44,9 +44,8 @@ declare interface MouseDetail {
 }
 
 declare interface CaretDetail {
-    position: number,
-    originBounds: ElementRect,
-    bounds: ElementRect,
+    row: number,
+    col: number,
 }
 
 declare interface KeyDetail {
