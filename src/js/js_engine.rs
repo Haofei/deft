@@ -22,7 +22,7 @@ use crate::ui::richtext::RichText;
 use crate::ui::select::Select;
 use crate::ui::textedit::TextEdit;
 use crate::ui::textinput::TextInput;
-use crate::ui::{Element, SysWindow};
+use crate::ui::{Element};
 use crate::ui::body::Body;
 use crate::ui::container::Container;
 use crate::ext::ext_animation::animation_create;

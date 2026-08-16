@@ -68,12 +68,12 @@ impl ParsedStyleProp {
         result
     }
 
-    pub fn fix_var(&mut self, vars: &StyleVars) {
+    pub fn fix_var<F: Fn(&str) -> Option<String>>(&mut self, vars: &mut F) {
         match self {
             ParsedStyleProp::Fixed(_v) => {}
             ParsedStyleProp::Var(key, _v, resolver, fixed) => {
                 fixed.clear();
-                if let Some(v) = resolver.resolve(&vars) {
+                if let Some(v) = resolver.resolve(vars) {
                     StyleList::str_to_style_prop(&key, &v, &mut |c| fixed.push(c));
                 }
             }
@@ -96,7 +96,7 @@ impl ParsedStyleProp {
 
 #[mrc_object]
 pub struct StyleList {
-    vars: StyleVars,
+    pub(crate) vars: StyleVars,
     default_style_props: Vec<ParsedStyleProp>,
     values: Vec<ParsedStyleProp>,
     hover_style_props: Vec<ParsedStyleProp>,
@@ -130,19 +130,16 @@ impl StyleList {
         .to_ref()
     }
 
-    pub fn resolve_variables(&mut self, parent_vars: &StyleVars) -> StyleVars {
-        let mut vars = parent_vars.clone();
-        vars.merge(self.vars.clone());
-        StyleList::fix_style_vars(&mut self.values, &vars);
-        StyleList::fix_style_vars(&mut self.hover_style_props, &vars);
-        StyleList::fix_style_vars(&mut self.selector_style_props, &vars);
+    pub fn resolve_variables<F: Fn(&str) -> Option<String>>(&mut self, vars: &mut F) {
+        StyleList::fix_style_vars(&mut self.values, vars);
+        StyleList::fix_style_vars(&mut self.hover_style_props, vars);
+        StyleList::fix_style_vars(&mut self.selector_style_props, vars);
         for (_, v) in &mut self.pseudo_element_style_props {
-            StyleList::fix_style_vars(v, &vars);
+            StyleList::fix_style_vars(v, vars);
         }
-        vars
     }
 
-    fn fix_style_vars(table: &mut Vec<ParsedStyleProp>, vars: &StyleVars) {
+    fn fix_style_vars<F: Fn(&str) -> Option<String>>(table: &mut Vec<ParsedStyleProp>, vars: &mut F) {
         for v in table {
             v.fix_var(vars);
         }
@@ -231,6 +228,10 @@ impl StyleList {
         } else {
             false
         }
+    }
+
+    pub fn set_style_var(&mut self, key: &str, value: &str) {
+        self.vars.set(key, value)
     }
 
     pub fn set_pseudo_element_style(&mut self, styles_map: HashMap<String, Vec<String>>) -> bool {

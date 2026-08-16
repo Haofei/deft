@@ -66,7 +66,7 @@ impl Select {
     pub fn set_placeholder(&mut self, value: String) {
         self.state.placeholder.clear();
         self.state.placeholder.add_line(Editable::build_line(value));
-        self.state.element_weak.mark_dirty(false);
+        self.el.style.make_layout_dirty();
     }
 
     #[js_func]

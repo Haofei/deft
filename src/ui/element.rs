@@ -42,12 +42,12 @@ use crate::paint::MatrixCalculator;
 use crate::render::RenderFn;
 use crate::state::StateMutRef;
 use crate::style::border_path::BorderPath;
+use crate::style::computed_style::ComputedStyle;
 use crate::style::css_manager::CssManager;
 use crate::style::length::LengthContext;
 use crate::style::listener::LayoutListener;
 use crate::style::parsed_styles::ParsedStyles;
 use crate::style::style_listener::{BoxedStyleListener, StyleListener};
-use crate::style::style_vars::StyleVars;
 
 thread_local! {
     pub static NEXT_ELEMENT_ID: Cell<u32> = Cell::new(1);
@@ -99,19 +99,13 @@ impl Element {
     pub fn new_untagged() -> Self {
         let inner = Mrc::new(ElementData::new());
         let mut ele = Self { inner };
-        let ele_weak = ele.inner.as_weak();
         // let bk = backend(ele_cp);
         // ele.backend = Mrc::new(backend_creator(&mut ele));
-        ele.style.set_change_listener(move |key| {
-            if let Ok(mut inner) = ele_weak.upgrade() {
-                inner.delegate.handle_style_changed(key);
-            }
-        });
         {
             let el = ele.as_weak();
             ele.style.scrollable.horizontal_bar.set_scroll_callback(move |_| {
                 let mut el = ok_or_return!(el.upgrade());
-                el.mark_dirty(false);
+                el.request_repaint();
                 el.emit_scroll_event();
             });
         }
@@ -119,7 +113,7 @@ impl Element {
             let el = ele.as_weak();
             ele.style.scrollable.vertical_bar.set_scroll_callback(move |_| {
                 let mut el = ok_or_return!(el.upgrade());
-                el.mark_dirty(false);
+                el.request_repaint();
                 el.emit_scroll_event();
             });
         }
@@ -369,7 +363,7 @@ impl Element {
     pub fn set_cursor(&mut self, cursor: Cursor) {
         self.cursor = cursor;
         //TODO remove
-        self.mark_dirty(false);
+        self.request_repaint();
     }
 
     #[js_func]
@@ -388,7 +382,7 @@ impl Element {
     }
 
     pub fn get_max_scroll_left(&self) -> f32 {
-        let content_bounds = self.style.computed().content_bounds();
+        let content_bounds = self.get_computed_style().content_bounds();
         let width = content_bounds.width;
         (self.get_real_content_size().0 - width).max(0.0)
     }
@@ -525,8 +519,8 @@ impl Element {
     }
 
     pub fn apply_transform(&self, mc: &mut MatrixCalculator) {
-        if let Some(tf) = self.style.computed().transform() {
-            let bounds = self.style.computed().bounds();
+        if let Some(tf) = self.get_computed_style().transform() {
+            let bounds = self.get_computed_style().bounds();
             mc.translate((bounds.width / 2.0, bounds.height / 2.0));
             tf.apply(bounds.width, bounds.height, mc);
             mc.translate((-bounds.width / 2.0, -bounds.height / 2.0));
@@ -540,7 +534,7 @@ impl Element {
 
     /// bounds relative to root node
     pub fn get_origin_bounds(&self) -> base::Rect {
-        let b = self.style.computed().bounds();
+        let b = self.get_computed_style().bounds();
         return if let Some(p) = self.get_parent() {
             let pob = p.get_origin_bounds();
             let x = pob.x + b.x - p.style.get_scroll_left();
@@ -566,7 +560,6 @@ impl Element {
             layout.insert_child(&mut child_el.style, pos);
             pos
         };
-        self.mark_dirty(true);
         child_el.set_parent_internal(ElementParent::Element(self.as_weak()));
         self.children.insert(pos as usize, child_el.clone_element());
         self.notifier_descendants_changed_recursively(&child_el, DescendantsChangeType::Attached);
@@ -606,7 +599,6 @@ impl Element {
         let mut ele = self.clone();
         let layout = &mut ele.style;
         layout.remove_child(&mut c.style);
-        self.mark_dirty(true);
         self.notifier_descendants_changed_recursively(&c, DescendantsChangeType::Removed);
         if let Some(window) = self.get_window() {
             if let Ok(mut f) = window.upgrade() {
@@ -623,7 +615,21 @@ impl Element {
         self.children.iter_mut().collect()
     }
 
-    pub fn calculate_layout(&mut self, available_width: f32, available_height: f32) {
+    pub fn calculate_layout(&mut self) {
+        let (available_width, available_height) = match &self.parent {
+            ElementParent::None => (f32::NAN, f32::NAN),
+            ElementParent::Element(p) => {
+                let p_bounds = p.upgrade().unwrap().get_computed_style().content_bounds();
+                (p_bounds.width, p_bounds.height)
+            }
+            ElementParent::Window(w) => {
+                w.upgrade()
+                    .ok()
+                    .map(|w| w.get_layout_size())
+                    .unwrap_or((f32::NAN, f32::NAN))
+            },
+            ElementParent::Page(_) => (f32::NAN, f32::NAN),
+        };
         self.style.compute_layout(available_width, available_height);
         // if self.style.has_shadow() {
         //     let mut scrollable = self.style.scrollable.clone();
@@ -713,33 +719,43 @@ impl Element {
         changed_style_props.values().cloned().into_iter().collect()
     }
 
-    pub(crate) fn resolve_style_vars_recurse(&mut self, parent_vars: &StyleVars) {
-        let new_vars = self.style.resolve_variables(&parent_vars);
-        for c in self.get_children_mut() {
-            c.resolve_style_vars_recurse(&new_vars);
+    pub(crate) fn resolve_style_vars_recurse_in_tree(elements: &mut Vec<Element>) {
+        for e in elements {
+            e.style.resolve_variables();
+            if !e.style.has_shadow() {
+                Self::resolve_style_vars_recurse_in_tree(&mut e.children);
+            }
         }
     }
 
-    pub(crate) fn compute_font_size_recurse(&mut self, ctx: &LengthContext) {
-        let style = self.style.get_styles(self.style.get_hover());
-        let px = if let Some(FixedStyleProp::FontSize(fs_prop)) = style.get(&StylePropKey::FontSize)
-        {
-            match fs_prop {
-                StylePropVal::Custom(c) => c.to_px(&ctx),
-                _ => ctx.font_size,
+    pub(crate) fn compute_font_size_recursively_in_tree(elements: &mut Vec<Element>, ctx: &LengthContext) {
+        for c in elements {
+            let style = c.style.get_styles(c.style.get_hover());
+            let px = if let Some(FixedStyleProp::FontSize(fs_prop)) = style.get(&StylePropKey::FontSize)
+            {
+                match fs_prop {
+                    StylePropVal::Custom(c) => c.to_px(&ctx),
+                    _ => ctx.font_size,
+                }
+            } else {
+                ctx.font_size
+            };
+            if c.style.computed.font_size() != px {
+                c.style.set_font_size(px);
             }
-        } else {
-            ctx.font_size
-        };
-        if self.style.computed().font_size() != px {
-            self.style.set_font_size(px);
-            self.delegate.handle_style_changed(StylePropKey::FontSize);
+            let mut ctx = ctx.clone();
+            ctx.font_size = px;
+            if !c.style.has_shadow() {
+                Self::compute_font_size_recursively_in_tree(&mut c.children, &ctx);
+            }
         }
-        let mut ctx = ctx.clone();
-        ctx.font_size = px;
+    }
 
-        for c in self.get_children_mut() {
-            c.compute_font_size_recurse(&ctx);
+    fn notify_style_resolved_recursively(elements: &mut Vec<Element>) {
+        for e in elements {
+            let e2 = e.clone();
+            e.style.listener.after_style_resolved(&e2.style.computed.basic);
+            Self::notify_style_resolved_recursively(&mut e.children);
         }
     }
 
@@ -854,66 +870,22 @@ impl Element {
             .remove_event_listener(&event_type, id)
     }
 
-    pub fn mark_dirty(&mut self, layout_dirty: bool) {
-        if layout_dirty {
-            let mut list = Vec::with_capacity(2);
-            list.push(self.get_layout_root_element());
-            if self.style.has_shadow() {
-                list.push(self.clone_element());
-            }
-
-            self.with_window(|mut win| {
-                for e in list {
-                    win.invalid_layout(&e);
-                }
-            });
-        } else {
-            let el = self.clone_element();
-            self.request_invalid(&el);
-        }
-    }
-
-    fn get_layout_root_element(&self) -> Element {
-        if self.style.has_shadow() {
-            self.clone_element()
-        } else if let Some(parent) = self.get_parent() {
-            parent.get_layout_root_element()
-        } else {
-            self.clone_element()
-        }
-    }
-
-    fn request_invalid(&mut self, element: &Element) {
-        if let Some(mut p) = self.get_parent() {
-            p.request_invalid(element);
-        } else {
-            self.with_window(|mut w| {
-                let root = element.get_root_element();
-                if let Some(tree) = w.render_tree.get_mut(&root.get_eid()) {
-                    tree.invalid_element(element);
-                }
-                w.notify_update();
-            });
-        }
-    }
-
-    pub fn mark_all_layout_dirty(&mut self) {
-        self.mark_dirty(true);
-        for c in self.get_children_mut() {
-            c.mark_all_layout_dirty();
-        }
+    pub fn request_repaint(&mut self) {
+        self.with_window(|mut win| {
+            win.notify_update();
+        });
     }
 
     pub fn set_child_decoration(&mut self, decoration: (f32, f32, f32, f32)) {
         self.style.set_child_decoration(decoration);
-        self.mark_dirty(false);
+        self.request_repaint();
     }
 
     pub fn get_children_viewport(&self) -> Option<Rect> {
         //TODO support overflow:visible
-        let border = self.style.computed().border_width();
+        let border = self.get_computed_style().border_width();
         let children_decoration = self.style.get_children_decoration();
-        let bounds = self.style.computed().bounds();
+        let bounds = self.get_computed_style().bounds();
         let x = border.3 + children_decoration.3;
         let y = border.0 + children_decoration.0;
         let right = bounds.width - border.1 - children_decoration.1;
@@ -932,8 +904,8 @@ impl Element {
     }
 
     pub fn get_border_path_mut(&mut self) -> BorderPath {
-        let bounds = self.style.computed().bounds();
-        let border_widths = self.style.computed().border_width();
+        let bounds = self.get_computed_style().bounds();
+        let border_widths = self.get_computed_style().border_width();
         let border_widths = [
             border_widths.0,
             border_widths.1,
@@ -943,7 +915,7 @@ impl Element {
         let bp = BorderPath::new(
             bounds.width,
             bounds.height,
-            self.style.computed().border_radius(),
+            self.get_computed_style().border_radius(),
             border_widths,
         );
         if !self.border_path.is_same(&bp) {
@@ -998,10 +970,94 @@ impl Element {
         self.delegate = Mrc::new(Box::new(delegate));
     }
 
+    pub fn get_computed_style(&self) -> &ComputedStyle {
+        if !self.computing_style {
+            self.clone_element().ensure_style_computed();
+        }
+        &self.style.computed
+    }
+
+    fn ensure_style_computed(&mut self) {
+        if self.style.is_style_dirty() || self.style.is_layout_dirty() {
+            self.computing_style = true;
+            match self.get_parent() {
+                Some(mut p) => {
+                    p.ensure_style_computed();
+                    if (self.style.is_style_dirty() || self.style.is_layout_dirty())
+                        && p.style.has_shadow()
+                    {
+                        p.do_compute_style(false);
+                    }
+                }
+                None => {
+                    self.do_compute_style(true);
+                }
+            }
+            self.computing_style = false;
+            // assert!(!self.style.layout_dirty && !self.style.dirty);
+        }
+    }
+
+    fn do_compute_style(&mut self, include_self: bool) {
+        let (viewport_width, viewport_height) = if let Some(w) = self.get_window() {
+            if let Ok(w) = w.upgrade() {
+                w.get_inner_size()
+            } else {
+                (0.0, 0.0)
+            }
+        } else {
+            (0.0, 0.0)
+        };
+        let ctx = LengthContext {
+            //TODO fix root font size
+            root: self.style.computed.font_size(),
+            font_size: self.style.computed.font_size(),
+            viewport_width,
+            viewport_height,
+        };
+        //Apply style
+        let mut me = self.clone_element();
+        if include_self {
+            let mut style_list = vec![me.style.clone()];
+            let mut list = vec![me.clone_element()];
+            Self::resolve_style_vars_recurse_in_tree(&mut list);
+            Self::compute_font_size_recursively_in_tree(&mut list, &ctx);
+            StyleNode::apply_style_update_in_tree(&mut style_list, &ctx);
+            Self::notify_style_resolved_recursively(&mut vec![me.clone_element()]);
+        } else {
+            Self::resolve_style_vars_recurse_in_tree(&mut me.children);
+            Self::compute_font_size_recursively_in_tree(&mut me.children, &ctx);
+            StyleNode::apply_style_update_in_tree(&mut self.style.get_children(), &ctx);
+            Self::notify_style_resolved_recursively(&mut me.children);
+        }
+
+        //Update layout
+        me.update_layout();
+    }
+
     fn select_style_recurse(&mut self) {
         self.select_style();
         for child in self.get_children_mut() {
             child.select_style_recurse();
+        }
+    }
+
+    pub(crate) fn update_layout(&mut self) {
+        //TODO skip repeat update
+        if !self.parent.is_element() || self.style.has_shadow() {
+            self.style.build();
+            self.calculate_layout();
+        }
+    }
+
+    pub(crate) fn update_layout_recursively(&mut self) {
+        //TODO skip repeat update
+        if !self.parent.is_element() || self.style.has_shadow() {
+            self.style.build();
+            self.calculate_layout();
+        }
+        for c in &mut self.children {
+            c.update_layout_recursively();
         }
     }
 }
@@ -1012,9 +1068,10 @@ impl ElementWeak {
             el.emit(event);
         }
     }
-    pub fn mark_dirty(&mut self, layout_dirty: bool) {
-        let mut ele = ok_or_return!(self.upgrade());
-        ele.mark_dirty(layout_dirty);
+
+    pub fn make_layout_dirty(&self) {
+        let mut el = ok_or_return!(self.upgrade());
+        el.style.make_layout_dirty();
     }
 }
 
@@ -1031,13 +1088,14 @@ impl StyleListener for ElementWeak {
         el.style.animation_style_props = styles;
     }
 
-    fn on_dirty(&mut self, layout_dirty: bool) {
-        self.mark_dirty(layout_dirty)
-    }
-
     fn accept_pseudo_element_styles(&mut self, styles: HashMap<String, Vec<ResolvedStyleProp>>) {
         let mut el = ok_or_return!(self.upgrade());
         el.accept_pseudo_element_styles(styles);
+    }
+
+    fn request_repaint(&mut self) {
+        let mut el = ok_or_return!(self.upgrade());
+        el.request_repaint();
     }
 }
 
@@ -1099,6 +1157,7 @@ pub struct Element {
     js_event_listener_factory: HashMap<String, BoxJsEventListenerFactory>,
     pub(crate) tooltip: String,
     delegate: Mrc<Box<dyn ElementDelegate>>,
+    computing_style: bool,
 }
 
 // js_weak_value!(Element, ElementWeak);
@@ -1154,6 +1213,7 @@ impl ElementData {
             js_event_listener_factory: HashMap::new(),
             tooltip: String::new(),
             delegate: Mrc::new(Box::new(EmptyElementBackend {})),
+            computing_style: false,
         }
     }
 }
@@ -1167,9 +1227,6 @@ impl ElementDelegate for EmptyElementBackend {
 }
 
 pub trait ElementDelegate {
-    fn handle_style_changed(&mut self, key: StylePropKey) {
-        let _ = key;
-    }
 
     fn render(&mut self) -> RenderFn {
         RenderFn::empty()

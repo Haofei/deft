@@ -1,13 +1,13 @@
 
 use crate as deft;
-use crate::base::{Rect, Size};
+use crate::base::Size;
 use crate::ui::{ElementDelegate, ElementWeak};
 use crate::ok_or_return;
 use crate::render::RenderFn;
-use crate::style::StylePropKey;
 use crate::text::textbox::{TextBox, TextElement, TextUnit};
 use deft_macros::mrc_object;
 use crate::event::TextUpdateEvent;
+use crate::style::computed_style::{BasicComputedStyle, ComputedStyle};
 use crate::style::listener::LayoutListener;
 use crate::style::measure::LayoutMeasurer;
 use crate::style::node_item::MeasureParams;
@@ -24,13 +24,19 @@ pub struct LabelDelegate {
 impl LabelDelegate {
 
     pub fn new(ew: ElementWeak) -> Self {
-        LabelDelegateData {
+        let mut delegate = LabelDelegateData {
             text_box: TextBox::new(),
             measure_called: false,
             last_layout_width: None,
             element: ew,
             text: "".to_string(),
-        }.to_ref()
+        }.to_ref();
+        let weak = delegate.as_weak();
+        delegate.text_box.set_layout_callback(move |_has_text| {
+            let mut me = ok_or_return!(weak.upgrade());
+            me.make_layout_invalid();
+        });
+        delegate
     }
 
     pub fn set_text(&mut self, text: &str) {
@@ -39,14 +45,14 @@ impl LabelDelegate {
             self.text_box.clear();
             let text_unit = self.build_text_unit(text.to_string());
             self.text_box.add_line(vec![TextElement::Text(text_unit)]);
-            self.make_layout_invalid();
             self.element.emit(TextUpdateEvent { value: text.to_string() })
         }
     }
 
     fn make_layout_invalid(&mut self) {
         self.last_layout_width = None;
-        self.element.mark_dirty(true);
+        let mut el = ok_or_return!(self.element.upgrade());
+        el.style.make_layout_dirty();
     }
 
     fn build_text_unit(&self, text: String) -> TextUnit {
@@ -63,10 +69,10 @@ impl LabelDelegate {
     }
 
     fn do_layout(&mut self, width: f32) {
-        // Skip relayout
         if self.last_layout_width == Some(width) {
             return;
         }
+
         self.text_box.set_layout_width(width);
         self.text_box.layout();
         self.last_layout_width = Some(width);
@@ -76,48 +82,9 @@ impl LabelDelegate {
 
 impl ElementDelegate for LabelDelegate {
 
-    fn handle_style_changed(&mut self, key: StylePropKey) {
-        let element = self.element.clone();
-        let element = ok_or_return!(element.upgrade());
-        match key {
-            StylePropKey::Color => {
-                let color = element.style.computed().color();
-                self.text_box.set_color(color);
-                //TODO optimize dont relayout
-                self.make_layout_invalid();
-            }
-            StylePropKey::FontSize => {
-                let font_size = element.style.computed().font_size();
-                self.text_box.set_font_size(font_size);
-                self.make_layout_invalid();
-            }
-            StylePropKey::FontFamily => {
-                let font_families = element.style.computed().font_family().clone();
-                self.text_box.set_font_families(font_families);
-                self.make_layout_invalid();
-            }
-            StylePropKey::FontWeight => {
-                let font_weight = element.style.computed().font_weight();
-                self.text_box.set_font_weight(font_weight);
-                self.make_layout_invalid();
-            }
-            StylePropKey::FontStyle => {
-                let font_style = element.style.computed().font_style().clone();
-                self.text_box.set_font_style(font_style);
-                self.make_layout_invalid();
-            }
-            StylePropKey::LineHeight => {
-                let line_height = element.style.computed().line_height();
-                self.text_box.set_line_height(line_height);
-                self.make_layout_invalid();
-            }
-            _ => {}
-        }
-    }
-
     fn render(&mut self) -> RenderFn {
         let el = ok_or_return!(self.element.upgrade(), RenderFn::empty());
-        let (pt, _, _, pl) = el.style.computed().padding();
+        let (pt, _, _, pl) = el.get_computed_style().padding();
         let mut text_renderer = self.text_box.render();
         RenderFn::new(move |painter| {
             painter.canvas.translate((pl, pt));
@@ -128,13 +95,22 @@ impl ElementDelegate for LabelDelegate {
 }
 
 impl LayoutListener for LabelDelegate {
+    fn after_style_resolved(&mut self, bs: &BasicComputedStyle) {
+        self.text_box.set_color(bs.color);
+        self.text_box.set_font_size(bs.font_size);
+        self.text_box.set_font_families(bs.font_family.clone());
+        self.text_box.set_font_weight(bs.font_weight);
+        self.text_box.set_font_style(bs.font_style);
+        self.text_box.set_line_height(bs.line_height);
+    }
+
     fn before_layout(&mut self) {
         self.measure_called = false;
     }
 
-    fn after_layout(&mut self, bounds: &Rect) {
+    fn after_layout(&mut self, style: &ComputedStyle) {
         if !self.measure_called {
-            self.do_layout(bounds.width);
+            self.do_layout(style.bounds().width);
         }
     }
 

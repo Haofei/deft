@@ -97,7 +97,7 @@ pub struct Scroll {
 impl Scroll {
     pub fn set_auto_height(&mut self, value: bool) {
         self.auto_height = value;
-        self.element.mark_dirty(true);
+        self.element.make_layout_dirty();
     }
 
     //TODO rename
@@ -108,7 +108,9 @@ impl Scroll {
 
     fn mark_layout_dirty(&mut self) {
         let auto_height = self.auto_height;
-        self.element.mark_dirty(auto_height);
+        if auto_height {
+            self.element.make_layout_dirty();
+        }
     }
 
     fn handle_caret_change(&mut self, _detail: &CaretChangeEvent) {

@@ -1,4 +1,3 @@
-use crate::style::style_vars::StyleVars;
 
 enum StyleExprPart {
     String(String),
@@ -32,12 +31,12 @@ impl StyleExpr {
         }
     }
 
-    pub fn resolve(&self, vars: &StyleVars) -> Option<String> {
+    pub fn resolve<F: Fn(&str) -> Option<String>>(&self, vars: &mut F) -> Option<String> {
         let mut result = String::new();
         for part in &self.parts {
             match part {
                 StyleExprPart::Var(k) => {
-                    result.push_str(vars.get(k)?);
+                    result.push_str(&vars(k.as_str())?);
                 }
                 StyleExprPart::String(v) => {
                     result.push_str(v);

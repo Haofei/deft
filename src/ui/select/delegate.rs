@@ -1,7 +1,6 @@
 use crate as deft;
 use std::collections::HashMap;
 use deft_macros::mrc_object;
-use crate::base::Rect;
 use crate::canvas_util::CanvasHelper;
 use crate::image::image_object::ImageObject;
 use crate::ui::container::Container;
@@ -11,7 +10,8 @@ use crate::ui::select::{ChangeEvent, SelectOption};
 use crate::event::ClickEventListener;
 use crate::ok_or_return;
 use crate::render::RenderFn;
-use crate::style::{FixedStyleProp, ResolvedStyleProp, StylePropKey};
+use crate::style::{FixedStyleProp, ResolvedStyleProp};
+use crate::style::computed_style::{BasicComputedStyle, ComputedStyle};
 use crate::style::listener::LayoutListener;
 use crate::style::parsed_styles::ParsedStyles;
 use crate::text::textbox::TextBox;
@@ -74,7 +74,7 @@ impl ElementDelegate for SelectDelegate {
     fn render(&mut self) -> RenderFn {
         let element_weak = self.element_weak.clone();
         let el = ok_or_return!(element_weak.upgrade(), RenderFn::empty());
-        let bounds = el.style.computed().bounds();
+        let bounds = el.get_computed_style().bounds();
         let (img_width, img_height) = self.select_img.get_container_size();
         let y = (bounds.height - img_height) / 2.0;
         let x = bounds.width - img_width - y;
@@ -84,7 +84,7 @@ impl ElementDelegate for SelectDelegate {
         } else {
             None
         };
-        let (pt, _, _, pl) = el.style.computed().padding();
+        let (pt, _, _, pl) = el.get_computed_style().padding();
         RenderFn::new(move |painter| {
             if let Some(pr) = &mut placeholder_renderer {
                 painter.canvas.session(|c| {
@@ -123,27 +123,17 @@ impl ElementDelegate for SelectDelegate {
         }
     }
 
-    fn handle_style_changed(&mut self, key: StylePropKey) {
-        let element_weak = self.element_weak.clone();
-        let mut el = ok_or_return!(element_weak.upgrade());
-        match key {
-            StylePropKey::Color => {
-                if self.select_img.set_color(el.style.computed().color()) {
-                    el.mark_dirty(false);
-                }
-            }
-            _ => {}
-        }
-    }
 }
 
 impl LayoutListener for SelectDelegate {
-    fn after_layout(&mut self, bounds: &Rect) {
-        let el = ok_or_return!(self.element_weak.upgrade());
-        let content_bounds = el.style.computed().content_bounds();
-        let height = bounds.height - 4.0;
+    fn after_style_resolved(&mut self, base_style: &BasicComputedStyle) {
+        self.select_img.set_color(base_style.color);
+    }
+
+    fn after_layout(&mut self, style: &ComputedStyle) {
+        let height = style.bounds().height - 4.0;
         self.select_img.set_container_size((height, height));
-        self.placeholder.set_line_height(content_bounds.height);
+        self.placeholder.set_line_height(style.line_height());
         self.placeholder.layout();
     }
 }

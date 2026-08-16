@@ -44,7 +44,7 @@ impl ElementDelegate for HelloElementDelegate {
 
     fn render(&mut self) -> RenderFn {
         let element = self.element_weak.upgrade().unwrap();
-        let bounds = element.style.computed().bounds();
+        let bounds = element.get_computed_style().bounds();
         let center = (bounds.width / 2.0, bounds.height / 2.0);
         let radius = f32::min(center.0, center.1);
         RenderFn::new(move |painter| {

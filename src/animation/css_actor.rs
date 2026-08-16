@@ -26,14 +26,12 @@ impl AnimationActor for CssAnimationActor {
         }
         self.listener.update_animation_styles(animation_style_props);
         let mut style_node = ok_or_return!(self.style_node.upgrade());
-        style_node.mark_dirty();
-        self.listener.mark_dirty(false);
+        style_node.make_style_dirty();
     }
 
     fn stop(&mut self) {
         self.listener.update_animation_styles(HashMap::new());
         let mut style_node = ok_or_return!(self.style_node.upgrade());
-        style_node.mark_dirty();
-        self.listener.mark_dirty(false);
+        style_node.make_style_dirty();
     }
 }

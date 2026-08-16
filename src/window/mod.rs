@@ -14,7 +14,6 @@ use crate::base::{
 };
 use crate::cursor::search_cursor;
 use crate::ui::body::Body;
-use crate::ui::util::get_tree_level;
 use crate::ui::{Element, ElementParent, JsWidget};
 use crate::error::{DeftError, DeftResult};
 use crate::event::{build_modifier, named_key_to_str, str_to_named_key, BlurEvent, ClickEvent, ClickEventListener, ContextMenuEvent, DragOverEvent, DragStartEvent, DropEvent, DroppedFileEvent, FocusEvent, FocusShiftEvent, HoveredFileEvent, KeyDownEvent, KeyEventDetail, KeyUpEvent, MouseDownEvent, MouseEnterEvent, MouseLeaveEvent, MouseMoveEvent, MouseUpEvent, MouseWheelEvent, PreeditEvent, TextInputEvent, TouchCancelEvent, TouchEndEvent, TouchMoveEvent, TouchStartEvent, WheelEvent, KEY_MOD_ALT, KEY_MOD_CTRL, KEY_MOD_META, KEY_MOD_SHIFT};
@@ -30,8 +29,6 @@ use crate::platform::support_multiple_windows;
 use crate::render::painter::ElementPainter;
 use crate::resource_table::ResourceTable;
 use crate::state::{State, StateManager, StateMutRef};
-use crate::style::length::LengthContext;
-use crate::style::style_vars::StyleVars;
 use crate::timer::{set_timeout_nanos, TimerHandle};
 
 use crate::window::page::Page;
@@ -52,7 +49,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::string::ToString;
 use std::time::SystemTime;
-use std::{env, mem};
+use std::env;
 use winit::dpi::Position::Logical;
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{
@@ -69,7 +66,6 @@ use winit::window::{
 };
 use crate::event_loop::core::run_with_app_event_loop;
 use crate::ext::ext_process::{EXIT_ON_ALL_WINDOWS_CLOSED};
-use crate::ui::dump::DumpWindow;
 use crate::window::tooltip::Tooltip;
 
 pub use crate::window::core::*;
@@ -147,6 +143,13 @@ struct UIState {
     hover: Option<Element>,
 }
 
+#[derive(Debug, Default)]
+pub struct WindowInset {
+    ime_height: f32,
+    status_height: f32,
+    navigation_height: f32,
+}
+
 pub struct Window {
     handle: WindowHandle,
     id: i32,
@@ -162,7 +165,6 @@ pub struct Window {
     dragging: bool,
     modifiers: Modifiers,
     dirty: bool,
-    layout_dirty_list: HashMap<u32, Element>,
     repaint_timer_handle: Option<TimerHandle>,
     event_registration: EventRegistration,
     attributes: WindowAttributes,
@@ -173,7 +175,7 @@ pub struct Window {
     next_frame_callbacks: Vec<Callback>,
     next_paint_callbacks: Vec<Callback>,
     pub render_tree: HashMap<u32, RenderTree>,
-    pub style_vars: StyleVars,
+    inset: WindowInset,
     frame_rate_controller: FrameRateController,
     next_frame_timer_handle: Option<TimerHandle>,
     resource_table: ResourceTable,
@@ -384,13 +386,11 @@ impl Window {
                 next_frame_callbacks: Vec::new(),
                 next_paint_callbacks: Vec::new(),
                 render_tree,
-                style_vars: StyleVars::new(),
                 frame_rate_controller: FrameRateController::new(),
                 next_frame_timer_handle: None,
                 resource_table: ResourceTable::new(),
                 drag_window_called: false,
                 render_backend_types,
-                layout_dirty_list: HashMap::new(),
                 pages: Vec::new(),
                 tooltip_instance: None,
                 body: body.clone(),
@@ -400,6 +400,7 @@ impl Window {
                     hover: None,
                     last_drag_over: None,
                 }),
+                inset: WindowInset::default(),
             };
             win_info.on_resize();
             wsm.new_state(win_info)
@@ -420,17 +421,21 @@ impl Window {
     }
 
     pub fn update_inset(&mut self, ty: InsetType, rect: Rect) {
-        let name = match ty {
-            InsetType::Ime => "deft-ime-height",
-            InsetType::StatusBar => "deft-status-height",
-            InsetType::Navigation => "deft-navigation-height",
-        };
         let height = rect.height() / self.window.scale_factor() as f32;
-        debug!("updating style variable: {} {}", name, height);
-        self.style_vars.set(name, &format!("{:.6}", height));
+        match ty {
+            InsetType::Ime => {
+                self.inset.ime_height = height;
+            }
+            InsetType::StatusBar => {
+                self.inset.status_height = height;
+            }
+            InsetType::Navigation => {
+                self.inset.navigation_height = height;
+            }
+        }
         let mut layer_roots = self.layer_roots.clone();
         for lr in layer_roots.deref_mut() {
-            lr.body.element_mut().style.mark_dirty();
+            self.sync_style_vars(lr.body.element_mut());
         }
     }
 
@@ -448,10 +453,7 @@ impl Window {
     }
 
     pub fn invalid_layout(&mut self, element: &Element) {
-        // Note: Uncomment to debug layout problems
-        // if self.layout_dirty_list.is_empty() { crate::trace::print_trace("layout dirty") }
-        self.layout_dirty_list.insert(element.get_eid(), element.clone_element());
-        self.notify_update();
+        element.clone_element().style.make_layout_dirty();
     }
 
     pub fn get_id(&self) -> i32 {
@@ -1228,7 +1230,7 @@ impl Window {
                 TouchPhase::Moved => "touchmove",
                 TouchPhase::Cancelled => "touchcancel",
             };
-            let (border_top, _, _, border_left) = node.style.computed().border_width();
+            let (border_top, _, _, border_left) = node.get_computed_style().border_width();
 
             let offset_x = relative_x - border_left;
             let offset_y = relative_y - border_top;
@@ -1340,13 +1342,13 @@ impl Window {
 
                 old_focusing.emit(FocusShiftEvent);
                 if show_focus_hint() {
-                    old_focusing.mark_dirty(false);
+                    old_focusing.request_repaint();
                 }
                 old_focusing.update_select_style_recurse();
             }
             let mut node = node.clone_element();
             if show_focus_hint() {
-                node.mark_dirty(false);
+                node.request_repaint();
             }
             node.update_select_style_recurse();
             node.emit(FocusEvent);
@@ -1378,8 +1380,8 @@ impl Window {
         let size = self.window.inner_size().to_logical(scale_factor);
         (size.width, size.height)
     }
-
-    fn update_layout(&mut self, mut roots: Vec<Element>) {
+    
+    pub(crate) fn get_layout_size(&self) -> (f32, f32) {
         let auto_size = !self.attributes.resizable;
         let (win_width, win_height) = self.get_inner_size();
         let width = if auto_size {
@@ -1392,41 +1394,7 @@ impl Window {
         } else {
             win_height
         };
-        debug!("calculate layout, {} x {}", width, height);
-        roots.sort_by(|a, b| {
-            let level_a = get_tree_level(a);
-            let level_b = get_tree_level(b);
-            level_a.cmp(&level_b)
-        });
-        for root in &mut roots {
-            root.style.build();
-        }
-        for mut root in roots {
-            let (w, h) = match &root.parent {
-                ElementParent::None => (f32::NAN, f32::NAN),
-                ElementParent::Element(p) => {
-                    let p_bounds = p.upgrade().unwrap().style.computed().content_bounds();
-                    (p_bounds.width, p_bounds.height)
-                }
-                ElementParent::Window(_) => (width, height),
-                ElementParent::Page(_) => (f32::NAN, f32::NAN),
-            };
-            //TODO skip if calculated
-            root.calculate_layout(w, h);
-        }
-        if auto_size {
-            let lr = some_or_return!(self.layer_roots.first());
-            let (final_width, final_height) = lr.body.get_size();
-            if win_width as u32 != final_width as u32 || win_height as u32 != final_height as u32 {
-                self.resize(crate::base::Size {
-                    width: final_width,
-                    height: final_height,
-                });
-                #[cfg(wayland_platform)]
-                //Note: No ResizeEvent will receive on wayland after Window::resize called.
-                self.on_resize();
-            }
-        }
+        (width, height)
     }
 
     pub fn update(&mut self) -> ResultWaiter<bool> {
@@ -1465,45 +1433,25 @@ impl Window {
             // skip duplicate update
             return ResultWaiter::new_finished(false);
         }
-        let (viewport_width, viewport_height) = self.get_inner_size();
         warn_time!(16, "update window");
-        let mut layer_roots = self.layer_roots.clone();
-        for lr in layer_roots.deref_mut() {
-            let body = &mut lr.body.element_mut();
-            let length_ctx = LengthContext {
-                root: body.style.computed().font_size(),
-                font_size: body.style.computed().font_size(),
-                viewport_width,
-                viewport_height,
-            };
-            //TODO compute font size only when any font size changed
-            body.resolve_style_vars_recurse(&self.style_vars);
-            body.compute_font_size_recurse(&length_ctx);
-            body.style.apply_style_update(false, &length_ctx);
-        }
-        let dirty_roots = mem::take(&mut self.layout_dirty_list);
-        let layout_dirty = !dirty_roots.is_empty();
-        if layout_dirty {
-            self.update_layout(dirty_roots.values().map(|e| e.clone_element()).collect());
-            //TODO should move to Popup?
-            let win_size = self
-                .window
-                .inner_size()
-                .to_logical(self.window.scale_factor());
-            for i in 1..self.layer_roots.len() {
-                let lr = &mut self.layer_roots[i];
-                let (root, x, y) = (&mut lr.body, &mut lr.x, &mut lr.y);
-                let bounds = root.style.computed().bounds();
-                if x.is_nan() {
-                    *x = (win_size.width - bounds.width) / 2.0;
-                    *y = (win_size.height - bounds.height) / 2.0;
-                } else {
-                    if bounds.width + *x > win_size.width {
-                        *x = win_size.width - bounds.width;
-                    }
-                    if bounds.height + *y > win_size.height {
-                        *y = win_size.height - bounds.height;
-                    }
+        //TODO should move to Popup?
+        let win_size = self
+            .window
+            .inner_size()
+            .to_logical(self.window.scale_factor());
+        for i in 1..self.layer_roots.len() {
+            let lr = &mut self.layer_roots[i];
+            let (root, x, y) = (&mut lr.body, &mut lr.x, &mut lr.y);
+            let bounds = root.get_computed_style().bounds();
+            if x.is_nan() {
+                *x = (win_size.width - bounds.width) / 2.0;
+                *y = (win_size.height - bounds.height) / 2.0;
+            } else {
+                if bounds.width + *x > win_size.width {
+                    *x = win_size.width - bounds.width;
+                }
+                if bounds.height + *y > win_size.height {
+                    *y = win_size.height - bounds.height;
                 }
             }
         }
@@ -1516,9 +1464,24 @@ impl Window {
             let rt = build_render_nodes(lr.body.element_mut());
             self.render_tree.insert(lr.body.get_eid(), rt);
         }
+        let auto_size = !self.attributes.resizable;
+        if auto_size {
+            let (win_width, win_height) = (win_size.width, win_size.height);
+            if let Some(lr) = self.layer_roots.first() {
+                let (final_width, final_height) = lr.body.get_size();
+                if win_width as u32 != final_width as u32 || win_height as u32 != final_height as u32 {
+                    self.resize(crate::base::Size {
+                        width: final_width,
+                        height: final_height,
+                    });
+                    #[cfg(wayland_platform)]
+                    //Note: No ResizeEvent will receive on wayland after Window::resize called.
+                    self.on_resize();
+                }
+            }
+        }
         // }
         let r = self.paint();
-        self.layout_dirty_list.clear();
         self.dirty = false;
         r
     }
@@ -1568,11 +1531,18 @@ impl Window {
             },
         };
         body.set_attribute("theme".to_string(), theme);
+        self.sync_style_vars(&mut body);
         // if self.ui_state.focusing.is_none() {
         // TODO move focusing to page?
         self.focus_element(&body);
         // }
         self.invalid_layout(&body);
+    }
+
+    fn sync_style_vars(&self, body: &mut Element) {
+        body.style.set_style_var("deft-ime-height", &format!("{:.6}", self.inset.ime_height));
+        body.style.set_style_var("deft-status-height", &format!("{:.6}", self.inset.status_height));
+        body.style.set_style_var("deft-navigation-height", &format!("{:.6}", self.inset.navigation_height));
     }
 
 
@@ -1617,8 +1587,9 @@ impl Window {
             return;
         }
         self.window.resize_surface(width, height);
-        let body = self.get_body();
-        self.invalid_layout(&body.clone_element());
+        for lr in self.layer_roots.iter_mut() {
+            lr.body.style.make_style_dirty();
+        }
         let scale_factor = self.window.scale_factor();
         self.emit(WindowResizeEvent {
             width: (width as f64 / scale_factor) as u32,
@@ -1772,7 +1743,7 @@ impl Window {
         let root = node.get_root_element();
         let render_tree = some_or_return!(self.render_tree.get(&root.get_eid()));
         let node_matrix = some_or_return!(render_tree.get_element_total_matrix(node));
-        let (border_top, _, _, border_left) = node.style.computed().border_width();
+        let (border_top, _, _, border_left) = node.get_computed_style().border_width();
 
         //TODO maybe not inverted?
         let inverted_matrix = node_matrix.invert().unwrap();

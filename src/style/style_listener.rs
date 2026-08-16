@@ -7,8 +7,10 @@ use crate::style::{FixedStyleProp, ResolvedStyleProp, StylePropKey};
 pub trait StyleListener {
     fn request_next_frame_callback(&mut self, callback: Callback);
     fn update_animation_styles(&mut self, styles: HashMap<StylePropKey, FixedStyleProp>);
-    fn on_dirty(&mut self, layout_dirty: bool);
+    // fn on_dirty(&mut self, layout_dirty: bool);
     fn accept_pseudo_element_styles(&mut self, styles: HashMap<String, Vec<ResolvedStyleProp>>);
+
+    fn request_repaint(&mut self);
 }
 
 struct NoopStyleListener {
@@ -24,11 +26,11 @@ impl StyleListener for NoopStyleListener {
 
     }
 
-    fn on_dirty(&mut self, _layout_dirty: bool) {
+    fn accept_pseudo_element_styles(&mut self, _styles: HashMap<String, Vec<ResolvedStyleProp>>) {
 
     }
 
-    fn accept_pseudo_element_styles(&mut self, _styles: HashMap<String, Vec<ResolvedStyleProp>>) {
+    fn request_repaint(&mut self) {
 
     }
 }
@@ -57,8 +59,8 @@ impl BoxedStyleListener {
         self.listener.update_animation_styles(styles)
     }
 
-    pub fn mark_dirty(&mut self, layout_dirty: bool) {
-        self.listener.on_dirty(layout_dirty)
+    pub fn request_repaint(&mut self) {
+        self.listener.request_repaint();
     }
 
     pub fn accept_pseudo_element_styles(&mut self, styles: HashMap<String, Vec<ResolvedStyleProp>>) {

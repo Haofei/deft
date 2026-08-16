@@ -45,10 +45,10 @@ use skia_safe::{Color, Matrix};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
-use bitflags::bitflags;
+use bitflags::{bitflags};
 use yoga::{Align, Direction, Display, FlexDirection, Justify, Layout, Node, PositionType, Size, StyleUnit, Wrap};
 use crate::base;
-use crate::style::computed_style::{ComputedStyle, LayoutInfo};
+use crate::style::computed_style::{BasicComputedStyle, ComputedStyle, LayoutInfo};
 use crate::style::listener::{EmptyLayoutListener, LayoutListener};
 use crate::style::measure::LayoutMeasurer;
 use crate::style::parsed_styles::ParsedStyles;
@@ -339,15 +339,6 @@ pub fn parse_box_prop(str: &str, default: &str) -> (String, String, String, Stri
     )
 }
 
-bitflags! {
-
-    struct StyleDirtyFlags: u8 {
-        const SelfDirty = 0b1;
-        const ChildrenDirty = 0b10;
-    }
-
-}
-
 #[derive(PartialEq, Clone)]
 pub struct YogaNode {
     node: Mrc<Node>,
@@ -375,18 +366,29 @@ impl DerefMut for YogaNode {
     }
 }
 
+bitflags! {
+    /// Multiple decorations can be applied at once. Ex: Underline and overline is
+    /// (0x1 | 0x2)
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    struct DirtyFlag: u32 {
+        const StyleDirty = 1;
+        const LayoutDirty = 2;
+    }
+}
+
+
 #[mrc_object]
 pub struct StyleNode {
+    dirty_flag: DirtyFlag,
     style_list: StyleList,
     yoga_node: NodeItem,
     children: Vec<StyleNode>,
-    computed: ComputedStyle,
-    listener: Box<dyn LayoutListener>,
+    pub(crate) computed: ComputedStyle,
+    pub(crate) listener: Box<dyn LayoutListener>,
     children_decoration: (f32, f32, f32, f32),
 
     animation_params: AnimationParams,
     animation_instance: Option<AnimationInstance>,
-    on_changed: Option<Box<dyn FnMut(StylePropKey)>>,
     resolved_style_props: HashMap<StylePropKey, ResolvedStyleProp>,
     pub scrollable: Mrc<Scrollable>,
     pub(super) animation_style_props: HashMap<StylePropKey, FixedStyleProp>,
@@ -394,7 +396,6 @@ pub struct StyleNode {
     applied_pseudo_element_styles: HashMap<String, Styles>,
     //TODO rename
     pub need_snapshot: bool,
-    dirty_flags: StyleDirtyFlags,
     hover: bool,
     parent: Option<StyleNodeWeak>,
     style_listener: BoxedStyleListener,
@@ -405,29 +406,31 @@ impl StyleNode {
         let transparent = Color::from_argb(0, 0, 0, 0);
         let scrollable = Scrollable::new();
         let mut inner = StyleNodeData {
+            dirty_flag: DirtyFlag::all(),
             style_list: StyleList::new(),
             animation_style_props: HashMap::new(),
             yoga_node: NodeItem::new(),
             children: Vec::new(),
             computed: ComputedStyle {
-                size: (0.0, 0.0),
-                border_radius: [0.0, 0.0, 0.0, 0.0],
-                border_color: [transparent, transparent, transparent, transparent],
-                background_image: None,
-                font_size: 12.0,
-                color: Color::new(0),
-                background_color: Color::new(0),
-                font_family: FontFamilies::default(),
-                font_weight: Weight::NORMAL,
-                font_style: FontStyle::Normal,
-                transform: None,
-                line_height: 12.0 * 1.2,
+                basic: BasicComputedStyle {
+                    size: (0.0, 0.0),
+                    border_radius: [0.0, 0.0, 0.0, 0.0],
+                    border_color: [transparent, transparent, transparent, transparent],
+                    background_image: None,
+                    font_size: 12.0,
+                    color: Color::new(0),
+                    background_color: Color::new(0),
+                    font_family: FontFamilies::default(),
+                    font_weight: Weight::NORMAL,
+                    font_style: FontStyle::Normal,
+                    transform: None,
+                    line_height: 12.0 * 1.2,
+                },
                 layout: LayoutInfo::default(),
             },
 
             animation_instance: None,
             animation_params: AnimationParams::new(),
-            on_changed: None,
             resolved_style_props: HashMap::new(),
             scrollable: Mrc::new(scrollable),
             listener: Box::new(EmptyLayoutListener {}),
@@ -435,7 +438,6 @@ impl StyleNode {
             applied_style: Styles::new(),
             applied_pseudo_element_styles: HashMap::new(),
             need_snapshot: false,
-            dirty_flags: StyleDirtyFlags::empty(),
             hover: false,
             parent: None,
             style_listener: BoxedStyleListener::new_noop()
@@ -443,31 +445,78 @@ impl StyleNode {
         inner.yoga_node.position_type = PositionType::Static;
         inner.to_ref()
     }
+
+    pub fn is_style_dirty(&self) -> bool {
+        self.dirty_flag.contains(DirtyFlag::StyleDirty)
+    }
+
+    pub fn is_layout_dirty(&self) -> bool {
+        self.dirty_flag.contains(DirtyFlag::LayoutDirty)
+    }
     
     pub fn set_hover(&mut self, value: bool) {
         self.hover = value;
         if self.has_hover_style() {
-            self.mark_dirty();
+            self.make_style_dirty();
         }
     }
     
     pub fn get_hover(&self) -> bool {
         self.hover
     }
-    pub fn mark_dirty(&mut self) {
-        self.dirty_flags |= StyleDirtyFlags::SelfDirty;
-        self.style_listener.mark_dirty(false);
-        if let Some(mut p) = self.get_parent() {
-            p.mark_children_style_dirty();
+
+    pub fn make_style_dirty(&mut self) {
+        self.mark_tree_dirty(DirtyFlag::StyleDirty);
+    }
+
+    pub fn make_layout_dirty(&mut self) {
+        self.mark_tree_dirty(DirtyFlag::LayoutDirty);
+    }
+
+    fn mark_tree_dirty(&mut self, flag: DirtyFlag) {
+        if self.dirty_flag.contains(flag) {
+            return;
+        }
+        fn mark_children_dirty(root: &mut StyleNode, flag: DirtyFlag) {
+            for child in root.children.iter_mut() {
+                child.mark_dirty_flag_recursively(flag);
+            }
+        }
+        if self.has_shadow() {
+            mark_children_dirty(self, flag);
+            match self.get_parent() {
+                Some(mut p) => p.make_style_dirty(),
+                None => {
+                    self.dirty_flag.insert(flag);
+                }
+            }
+        } else {
+            let mut root = self.get_tree_root();
+            if !root.has_shadow() {
+                root.dirty_flag.insert(flag);
+            }
+            mark_children_dirty(&mut root, flag);
+        }
+        self.style_listener.request_repaint();
+    }
+
+    fn mark_dirty_flag_recursively(&mut self, flag: DirtyFlag) {
+        if self.dirty_flag.contains(flag) {
+            return;
+        }
+        self.dirty_flag.insert(flag);
+        for child in &mut self.children {
+            child.mark_dirty_flag_recursively(flag);
         }
     }
 
-    fn mark_children_style_dirty(&mut self) {
-        if !self.dirty_flags.contains(StyleDirtyFlags::ChildrenDirty) {
-            self.dirty_flags |= StyleDirtyFlags::ChildrenDirty;
-            if let Some(mut p) = self.get_parent() {
-                p.mark_children_style_dirty();
-            }
+    fn get_tree_root(&self) -> StyleNode {
+        if self.yoga_node.is_layout_boundary() {
+            self.clone()
+        } else if let Some(p) = self.get_parent() {
+            p.get_tree_root()
+        } else {
+            self.clone()
         }
     }
 
@@ -479,21 +528,13 @@ impl StyleNode {
         }
     }
 
-    pub fn apply_style_update(&mut self, parent_changed: bool, length_ctx: &LengthContext) {
-        let is_self_dirty = self.dirty_flags.contains(StyleDirtyFlags::SelfDirty);
-        let is_children_dirty = self.dirty_flags.contains(StyleDirtyFlags::ChildrenDirty);
-        let changed = if is_self_dirty || parent_changed {
-            self.apply_owned_style(length_ctx)
-        } else {
-            false
-        };
-        if is_children_dirty || changed {
-            for c in &mut self.children {
-                c.apply_style_update(changed, length_ctx);
+    pub(crate) fn apply_style_update_in_tree(elements: &mut Vec<Self>, length_ctx: &LengthContext) {
+        for child in elements.iter_mut() {
+            child.apply_owned_style(length_ctx);
+            if !child.has_shadow() {
+                Self::apply_style_update_in_tree(&mut child.children, length_ctx);
             }
         }
-        self.dirty_flags.remove(StyleDirtyFlags::ChildrenDirty);
-        self.dirty_flags.remove(StyleDirtyFlags::SelfDirty);
     }
 
     fn apply_owned_style(&mut self, length_ctx: &LengthContext) -> bool {
@@ -601,7 +642,7 @@ impl StyleNode {
         for sp in changed_styles {
             let (repaint, need_layout) = self.set_resolved_style_prop(sp, length_ctx);
             if need_layout || repaint {
-                self.style_listener.mark_dirty(need_layout);
+                self.make_layout_dirty();
             }
         }
 
@@ -637,23 +678,19 @@ impl StyleNode {
     
     pub fn append_style(&mut self, styles: ParsedStyles) {
         self.style_list.append_style(styles);
-        self.mark_dirty();
+        self.make_style_dirty();
     }
 
     pub fn set_style(&mut self, style: ParsedStyles) {
         self.style_list.set_style(style);
-        self.mark_dirty();
+        self.make_style_dirty();
     }
 
     pub fn set_hover_style(&mut self, style: ParsedStyles) {
         self.style_list.set_hover_style(style);
         if self.hover {
-            self.mark_dirty();
+            self.make_style_dirty();
         }
-    }
-
-    pub fn set_change_listener<F: FnMut(StylePropKey) + 'static>(&mut self, listener: F) {
-        self.on_changed = Some(Box::new(listener));
     }
     
     pub fn set_scroll_left(&mut self, value: f32) {
@@ -682,8 +719,23 @@ impl StyleNode {
         self.style_list.get_pseudo_element_style_props()
     }
 
-    pub fn resolve_variables(&mut self, parent_vars: &StyleVars) -> StyleVars {
-        self.style_list.resolve_variables(parent_vars)
+    pub fn resolve_variables(&mut self) {
+        let me = self.clone();
+        self.style_list.resolve_variables(&mut move |k| {
+            me.get_var(k)
+        })
+    }
+
+    fn get_var(&self, name: &str) -> Option<String> {
+        if let Some(v) = self.style_list.vars.get(name) {
+            Some(v.to_string())
+        } else {
+            if let Some(p) = self.get_parent() {
+                p.get_var(name)
+            } else {
+                None
+            }
+        }
     }
 
     pub fn has_hover_style(&self) -> bool {
@@ -692,17 +744,23 @@ impl StyleNode {
 
     pub fn set_selector_style(&mut self, styles: Vec<String>) {
         if self.style_list.set_selector_style(styles) {
-            self.mark_dirty();
+            self.make_style_dirty();
         }
+    }
+
+    pub fn set_style_var(&mut self, key: &str, value: &str) {
+        self.style_list.set_style_var(key, value);
+        self.make_style_dirty();
     }
 
     pub fn set_pseudo_element_style(&mut self, styles_map: HashMap<String, Vec<String>>) {
         if self.style_list.set_pseudo_element_style(styles_map) {
-            self.mark_dirty();
+            self.make_style_dirty();
         }
     }
 
     fn on_layout_update(&mut self) {
+        self.dirty_flag = DirtyFlag::empty();
         let ml = self.yoga_node.layout.get_layout().unwrap_or(Layout::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
         self.computed.layout = LayoutInfo {
             border_width: self.yoga_node.layout.get_border_width().unwrap_or_default(),
@@ -711,8 +769,8 @@ impl StyleNode {
         };
         //TODO performance: maybe not changed?
         //TODO use origin bounds?
-        let bounds = self.get_bounds();
-        self.listener.after_layout(&bounds);
+        let style = self.computed.clone();
+        self.listener.after_layout(&style);
         if !self.has_shadow() {
             for child in &mut self.children {
                 child.on_layout_update();
@@ -774,8 +832,8 @@ impl StyleNode {
     fn update_shadow_recursively(&mut self) {
         if self.has_shadow() {
             let [width, height] = self.yoga_node.layout.get_size().unwrap_or_default();
-            if self.computed.size != (width, height) {
-                self.computed.size = (width, height);
+            if self.computed.basic.size != (width, height) {
+                self.computed.basic.size = (width, height);
                 self.compute_layout(width, height);
             }
         }
@@ -933,12 +991,8 @@ impl StyleNode {
         }
     }
 
-    pub fn computed(&self) -> &ComputedStyle {
-        &self.computed
-    }
-
     pub fn set_font_size(&mut self, font_size: f32) {
-        self.computed.font_size = font_size;
+        self.computed.basic.font_size = font_size;
     }
 
     pub fn get_children_decoration(&self) -> (f32, f32, f32, f32) {
@@ -957,33 +1011,31 @@ impl StyleNode {
         self.resolved_style_props.insert(prop_key, p.clone());
         let repaint = true;
         let mut need_layout = true;
-        let mut change_notified = false;
 
         match p {
             ResolvedStyleProp::Color(v) => {
-                self.computed.color = v;
+                self.computed.basic.color = v;
                 need_layout = false;
             }
             ResolvedStyleProp::BackgroundColor(value) => {
-                self.computed.background_color = value;
+                self.computed.basic.background_color = value;
                 need_layout = false;
             }
             ResolvedStyleProp::FontSize(_) => {
                 //Do nothing
-                change_notified = true;
                 //TODO need_layout = false?
             }
             ResolvedStyleProp::FontFamily(value) => {
-                self.computed.font_family = value;
+                self.computed.basic.font_family = value;
             }
             ResolvedStyleProp::FontWeight(value) => {
-                self.computed.font_weight = value;
+                self.computed.basic.font_weight = value;
             }
             ResolvedStyleProp::FontStyle(value) => {
-                self.computed.font_style = value;
+                self.computed.basic.font_style = value;
             }
             ResolvedStyleProp::LineHeight(value) => {
-                self.computed.line_height = value.to_px(length_ctx);
+                self.computed.basic.line_height = value.to_px(length_ctx);
             }
             ResolvedStyleProp::BorderTopWidth(value) => {
                 self.set_border_width(&value, &vec![0], length_ctx);
@@ -1097,20 +1149,20 @@ impl StyleNode {
                 self.scrollable.horizontal_bar.set_strategy(scroll_strategy);
             }
             ResolvedStyleProp::BorderTopLeftRadius(value) => {
-                self.computed.border_radius[0] = value.to_px(&length_ctx);
+                self.computed.basic.border_radius[0] = value.to_px(&length_ctx);
             }
             ResolvedStyleProp::BorderTopRightRadius(value) => {
-                self.computed.border_radius[1] = value.to_px(&length_ctx);
+                self.computed.basic.border_radius[1] = value.to_px(&length_ctx);
             }
             ResolvedStyleProp::BorderBottomRightRadius(value) => {
-                self.computed.border_radius[2] = value.to_px(&length_ctx);
+                self.computed.basic.border_radius[2] = value.to_px(&length_ctx);
             }
             ResolvedStyleProp::BorderBottomLeftRadius(value) => {
-                self.computed.border_radius[3] = value.to_px(&length_ctx);
+                self.computed.basic.border_radius[3] = value.to_px(&length_ctx);
             }
             ResolvedStyleProp::Transform(value) => {
                 need_layout = false;
-                self.computed.transform = Some(value);
+                self.computed.basic.transform = Some(value);
             }
             ResolvedStyleProp::AnimationName(value) => {
                 need_layout = false;
@@ -1153,11 +1205,6 @@ impl StyleNode {
             ResolvedStyleProp::RowGap(value) => {
                 self.yoga_node.row_gap = value.to_px(&length_ctx);
             } //TODO aspectratio
-        }
-        if !change_notified {
-            if let Some(on_changed) = &mut self.on_changed {
-                on_changed(prop_key);
-            }
         }
 
         (repaint, need_layout)
@@ -1219,7 +1266,7 @@ impl StyleNode {
 
     fn set_border_color(&mut self, color: &Color, edges: &Vec<usize>) {
         for index in edges {
-            self.computed.border_color[*index] = *color;
+            self.computed.basic.border_color[*index] = *color;
         }
     }
 
@@ -1228,8 +1275,9 @@ impl StyleNode {
         self.yoga_node
             .children
             .insert(index as usize, child.yoga_node.clone());
+        self.make_style_dirty();
         child.parent = Some(self.as_weak());
-        child.mark_dirty();
+        child.mark_dirty_flag_recursively(DirtyFlag::StyleDirty);
     }
 
     pub fn get_children(&self) -> Vec<StyleNode> {
@@ -1245,7 +1293,8 @@ impl StyleNode {
         self.yoga_node.children.remove(idx);
         self.inner.children.remove(idx);
         child.parent = None;
-        child.mark_dirty();
+        child.make_style_dirty();
+        self.make_style_dirty();
     }
 
     pub fn child_count(&self) -> u32 {

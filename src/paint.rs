@@ -234,9 +234,9 @@ impl RenderTree {
     }
 
     pub fn create_node(&mut self, element: &mut Element) {
-        let bounds = element.style.computed().bounds();
+        let bounds = element.get_computed_style().bounds();
         let mut el = element.clone_element();
-        let style = element.style.computed().clone();
+        let style = element.get_computed_style().clone();
         let element_data = ElementObjectData {
             border_path: element.get_border_path_mut(),
             element_id: element.get_eid(),
@@ -257,7 +257,7 @@ impl RenderTree {
         // print_time!("rebuild render object");
         let old_layout_tree = mem::take(&mut self.layout_tree);
         let mut matrix_calculator = MatrixCalculator::new();
-        let bounds = element.style.computed().bounds();
+        let bounds = element.get_computed_style().bounds();
         let rro = self.build_render_object(
             element,
             0.0,
@@ -357,7 +357,7 @@ impl RenderTree {
     ) -> Vec<RenderObject> {
         let mut children = Vec::new();
         for c in element.get_children() {
-            let child_bounds = c.style.computed().bounds();
+            let child_bounds = c.get_computed_style().bounds();
             matrix_calculator.save();
             matrix_calculator.translate((child_bounds.x, child_bounds.y));
             let child_origin_x = origin_x + child_bounds.x;
@@ -390,7 +390,7 @@ impl RenderTree {
         layer_x: f32,
         layer_y: f32,
     ) -> Vec<RenderObject> {
-        let bounds = element.style.computed().bounds();
+        let bounds = element.get_computed_style().bounds();
         let need_create_children_layer = Self::need_create_children_layer(element);
         if need_create_children_layer {
             let (scroll_left, scroll_top) = element.style.scrollable.scroll_offset();
@@ -528,7 +528,7 @@ impl RenderTree {
         let element_object_idx = element.render_object_idx.unwrap();
         // let mut border_path = element.create_border_path();
         let element_data = &mut self.element_objects[element_object_idx];
-        element_data.style = element.style.computed().clone();
+        element_data.style = element.get_computed_style().clone();
         element_data.coord = (bounds.x, bounds.y);
         element_data.layer_object_idx = Some(layer_object_idx);
         element_data.layer_coord = (layer_x, layer_y);
@@ -562,7 +562,7 @@ impl RenderTree {
     }
 
     fn need_create_root_layer(element: &Element) -> bool {
-        if element.style.computed().transform().is_some() {
+        if element.get_computed_style().transform().is_some() {
             return true;
         }
         let pos_type = element.style.get_position_type();

@@ -4,14 +4,13 @@ use crate::base::{Callback, Rect};
 use crate::canvas_util::CanvasHelper;
 use crate::edit::edit_history::{EditDetail, EditHistory};
 use crate::ui::{Element, Widget, ElementDelegate, ElementWeak};
-use crate::window::SysWindow;
 use crate::event::{BlurEventListener, CaretChangeEvent, FocusEventListener, KeyDownEventListener, KeyEventDetail, MouseDownEventListener, MouseLeaveEventListener, PreeditEventListener, ScrollEventListener, TextChangeEvent, TextInputEventListener, TextUpdateEvent, KEY_MOD_CTRL, KEY_MOD_SHIFT};
 use crate::event_loop::{create_app_event_loop_proxy};
 use crate::js::{FromJsValue, ToJsValue};
 use crate::number::DeNan;
 use crate::render::RenderFn;
 use crate::string::StringUtils;
-use crate::style::{ResolvedStyleProp, StylePropKey};
+use crate::style::ResolvedStyleProp;
 use crate::text::textbox::{TextBox, TextCoord, TextElement, TextUnit};
 use crate::text::TextAlign;
 use crate::timer::TimerHandle;
@@ -25,9 +24,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use winit::keyboard::NamedKey;
 use winit::window::{Cursor, CursorIcon};
+use crate::style::computed_style::{BasicComputedStyle, ComputedStyle};
 use crate::style::listener::LayoutListener;
 use crate::style::measure::LayoutMeasurer;
 use crate::style::node_item::MeasureParams;
+use crate::style::style_listener::StyleListener;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -163,23 +164,20 @@ impl EditableDelegate {
 
     fn make_layout_invalid(&mut self) {
         self.last_layout_size = None;
-        self.element.mark_dirty(true);
+        self.element.make_layout_dirty();
     }
 }
 
 impl EditableDelegate {
 
     fn layout(&mut self, bounds: &Rect) {
-        let element = ok_or_return!(self.element.upgrade());
-        let padding = element.style.computed().padding();
-        let border = element.style.computed().border_width();
         let mut line_height = self.line_height;
-        let padding_box_width = bounds.width.de_nan(f32::INFINITY) - border.1 - border.3;
-        let padding_box_height = bounds.height.de_nan(f32::INFINITY) - border.0 - border.2;
+        let bounds_width = bounds.width.de_nan(f32::INFINITY);
+        let bounds_height = bounds.height.de_nan(f32::INFINITY);
 
-        let mut layout_width = padding_box_width;
+        let mut layout_width = bounds_width;
         if !self.multiple_line {
-            let content_height = padding_box_height;
+            let content_height = bounds_height;
             line_height = content_height;
             layout_width = f32::NAN;
         }
@@ -189,15 +187,10 @@ impl EditableDelegate {
         }
         self.last_layout_size = last_layout_size;
 
-
         self.placeholder.set_line_height(line_height);
-        self.paragraph.set_line_height(line_height);
-
-        self.placeholder.set_padding(padding);
         self.placeholder.set_layout_width(layout_width);
         self.placeholder.layout();
 
-        self.paragraph.set_padding(padding);
         self.paragraph.set_layout_width(layout_width);
         self.paragraph.layout();
     }
@@ -221,7 +214,7 @@ impl EditableDelegate {
                 500,
             )
         });
-        self.element.mark_dirty(false);
+        self.element.request_repaint();
         let el = ok_or_return!(self.element.upgrade());
         if let Some(window) = el.get_window() {
             if let Ok(f) = window.upgrade() {
@@ -244,7 +237,7 @@ impl EditableDelegate {
                     elp.send_event(AppEvent::HideSoftInput(f.get_id())).unwrap();
                 }
             }
-            el.mark_dirty(false);
+            el.request_repaint();
         }
     }
 
@@ -359,7 +352,7 @@ impl EditableDelegate {
             //         self.base.unselect();
             //     }
             // }
-            self.element.mark_dirty(false);
+            self.element.request_repaint();
             //TODO do not use loop callback?
             // Note: here use loop callback because of paragraph has not been layout when receive caret change event
             let mut me = self.clone();
@@ -729,7 +722,7 @@ impl Editable {
     fn caret_tick(state: Arc<Mutex<EditableState>>, mut context: ElementWeak) {
         let mut state = state.lock().unwrap();
         state.caret_visible = !state.caret_visible;
-        context.mark_dirty(false);
+        context.request_repaint();
     }
 
     fn handle_input(&mut self, input: &str) {
@@ -863,7 +856,7 @@ impl Editable {
         {
             let mut element_weak = ele.as_weak();
             paragraph.set_repaint_callback(move || {
-                element_weak.mark_dirty(false);
+                element_weak.request_repaint();
             });
         }
 
@@ -900,6 +893,11 @@ impl Editable {
                 let mut delegate = ok_or_return!(delegate_weak.upgrade());
                 delegate.make_layout_invalid();
             });
+            let delegate_weak = delegate.as_weak();
+            delegate.placeholder.set_layout_callback(move |_has_text| {
+                let mut delegate = ok_or_return!(delegate_weak.upgrade());
+                delegate.make_layout_invalid();
+            });
         }
 
         ele.set_layout_listener(delegate.clone());
@@ -918,7 +916,7 @@ impl Editable {
                 var.setup_auto_scroll_callback();
                 var.emit_caret_change();
                 var.update_ime();
-                var.element.mark_dirty(false);
+                var.element.request_repaint();
             });
         }
 
@@ -942,34 +940,6 @@ impl Editable {
 impl Widget for Editable {}
 
 impl ElementDelegate for EditableDelegate {
-    fn handle_style_changed(&mut self, key: StylePropKey) {
-        let element = self.element.clone();
-        let element = ok_or_return!(element.upgrade());
-        match key {
-            StylePropKey::FontStyle => {
-                self.paragraph.set_font_style(element.style.computed().font_style().clone());
-            }
-            StylePropKey::FontSize => {
-                self.paragraph.set_font_size(element.style.computed().font_size());
-            }
-            StylePropKey::LineHeight => {
-                self.line_height = element.style.computed().line_height();
-            }
-            StylePropKey::Color => {
-                self.paragraph.set_color(element.style.computed().color());
-                let mut state = self.state.lock().unwrap();
-                state.caret_paint.set_color(element.style.computed().color());
-            }
-            StylePropKey::FontWeight => {
-                self.paragraph.set_font_weight(element.style.computed().font_weight());
-            }
-            StylePropKey::FontFamily => {
-                self.paragraph
-                    .set_font_families(element.style.computed().font_family().clone());
-            }
-            _ => {}
-        }
-    }
 
     fn render(&mut self) -> RenderFn {
         let state = self.state.clone();
@@ -1020,13 +990,33 @@ impl LayoutMeasurer for EditableDelegate {
 }
 
 impl LayoutListener for EditableDelegate {
+    fn after_style_resolved(&mut self, base_style: &BasicComputedStyle) {
+        self.paragraph.set_color(base_style.color);
+        self.placeholder.set_font_size(base_style.font_size);
+        self.placeholder.set_line_height(base_style.line_height);
+        self.placeholder.set_font_families(base_style.font_family.clone());
+
+        self.paragraph.set_line_height(base_style.line_height);
+        self.paragraph.set_font_style(base_style.font_style);
+        self.paragraph.set_font_size(base_style.font_size);
+        self.paragraph.set_line_height(base_style.line_height);
+        self.paragraph.set_font_weight(base_style.font_weight);
+        self.paragraph.set_font_families(base_style.font_family.clone());
+        self.paragraph.set_color(base_style.color);
+
+        {
+            let mut state = self.state.lock().unwrap();
+            state.caret_paint.set_color(base_style.color);
+        }
+    }
+
     fn before_layout(&mut self) {
         self.measure_called = false;
     }
 
-    fn after_layout(&mut self, bounds: &Rect) {
+    fn after_layout(&mut self, style: &ComputedStyle) {
         if !self.measure_called {
-            self.layout(&bounds);
+            self.layout(&style.bounds());
         }
         self.update_ime();
     }

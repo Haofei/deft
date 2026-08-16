@@ -31,9 +31,9 @@ impl Image {
     }
 
     fn update_img(&mut self, mut img: ImageObject) {
-        img.set_color(self.el.style.computed().color());
+        img.set_color(self.el.style.computed.color());
         *self.img.lock().unwrap() = img;
-        self.el.mark_dirty(true);
+        self.el.style.make_layout_dirty();
     }
 
     #[js_func]

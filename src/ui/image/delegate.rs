@@ -1,13 +1,12 @@
 use std::sync::{Arc, Mutex};
-use crate::base::{Rect, Size};
+use crate::base::Size;
 use crate::image::image_object::ImageObject;
 use crate::ui::{ElementDelegate, ElementWeak};
-use crate::ok_or_return;
 use crate::render::RenderFn;
+use crate::style::computed_style::{BasicComputedStyle, ComputedStyle};
 use crate::style::listener::LayoutListener;
 use crate::style::measure::LayoutMeasurer;
 use crate::style::node_item::MeasureParams;
-use crate::style::StylePropKey;
 
 #[derive(Clone)]
 pub struct ImageDelegate {
@@ -16,21 +15,6 @@ pub struct ImageDelegate {
 }
 
 impl ElementDelegate for ImageDelegate {
-    fn handle_style_changed(&mut self, key: StylePropKey) {
-        let element = ok_or_return!(self.element.upgrade());
-        match key {
-            StylePropKey::Color => {
-                let changed = {
-                    let mut img = self.img.lock().unwrap();
-                    img.set_color(element.style.computed().color())
-                };
-                if changed {
-                    self.element.mark_dirty(false);
-                }
-            }
-            _ => {}
-        }
-    }
     fn render(&mut self) -> RenderFn {
         self.img.lock().unwrap().render()
     }
@@ -38,9 +22,13 @@ impl ElementDelegate for ImageDelegate {
 }
 
 impl LayoutListener for ImageDelegate {
-    fn after_layout(&mut self, _bounds: &Rect) {
-        let el = ok_or_return!(self.element.upgrade());
-        let bounds = el.style.computed().content_bounds();
+    fn after_style_resolved(&mut self, base_style: &BasicComputedStyle) {
+        let mut img = self.img.lock().unwrap();
+        img.set_color(base_style.color);
+    }
+    
+    fn after_layout(&mut self, style: &ComputedStyle) {
+        let bounds = style.content_bounds();
         self.img.lock().unwrap().set_container_size((bounds.width, bounds.height));
     }
 }

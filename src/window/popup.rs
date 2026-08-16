@@ -7,7 +7,6 @@ use crate::ext::ext_window::WindowAttrs;
 use crate::platform::support_multiple_windows;
 use crate::window::page::PageWeak;
 use crate::window::{Window, WindowHandle, WindowResizeEventListener};
-use crate::window::SysWindow;
 use crate::winit::dpi::Position;
 use crate::{js_weak_value, ok_or_return};
 use deft_macros::{js_methods, mrc_object};

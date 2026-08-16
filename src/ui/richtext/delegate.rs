@@ -2,11 +2,11 @@ use crate as deft;
 use deft_macros::mrc_object;
 use crate::base::Size;
 use crate::ui::{ElementDelegate, ElementWeak};
-use crate::ok_or_return;
 use crate::render::RenderFn;
+use crate::style::computed_style::BasicComputedStyle;
+use crate::style::listener::LayoutListener;
 use crate::style::measure::LayoutMeasurer;
 use crate::style::node_item::MeasureParams;
-use crate::style::StylePropKey;
 use crate::text::textbox::TextBox;
 
 #[mrc_object]
@@ -16,35 +16,19 @@ pub struct RichTextDelegate {
 }
 
 impl ElementDelegate for RichTextDelegate {
-    fn handle_style_changed(&mut self, key: StylePropKey) {
-        let ew = self.element.clone();
-        let element = ok_or_return!(ew.upgrade());
-        match key {
-            StylePropKey::Color => {
-                self.text_box.set_color(element.style.computed().color());
-            }
-            StylePropKey::FontSize => {
-                self.text_box.set_font_size(element.style.computed().font_size());
-            }
-            StylePropKey::FontFamily => {
-                self.text_box
-                    .set_font_families(element.style.computed().font_family().clone());
-            }
-            StylePropKey::FontWeight => {
-                self.text_box.set_font_weight(element.style.computed().font_weight());
-            }
-            StylePropKey::FontStyle => {
-                self.text_box.set_font_style(element.style.computed().font_style().clone());
-            }
-            StylePropKey::LineHeight => {
-                self.text_box.set_line_height(element.style.computed().line_height());
-            }
-            _ => {}
-        }
-    }
-
     fn render(&mut self) -> RenderFn {
         self.text_box.render()
+    }
+}
+
+impl LayoutListener for RichTextDelegate {
+    fn after_style_resolved(&mut self, base_style: &BasicComputedStyle) {
+        self.text_box.set_color(base_style.color);
+        self.text_box.set_font_size(base_style.font_size);
+        self.text_box.set_font_families(base_style.font_family.clone());
+        self.text_box.set_font_weight(base_style.font_weight);
+        self.text_box.set_font_style(base_style.font_style.clone());
+        self.text_box.set_line_height(base_style.line_height);
     }
 }
 

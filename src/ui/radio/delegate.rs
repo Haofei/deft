@@ -45,7 +45,6 @@ impl RadioDelegate {
         if self.checked != new_checked {
             self.checked = new_checked;
             self.update_children();
-            self.element.mark_dirty(false);
         }
     }
 

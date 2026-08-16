@@ -14,69 +14,74 @@ pub struct LayoutInfo {
 }
 
 #[derive(Clone)]
+pub struct BasicComputedStyle {
+    pub size: (f32, f32),
+    pub border_radius: [f32; 4],
+    pub border_color: [Color; 4],
+    pub background_image: Option<Image>,
+    pub font_size: f32,
+    pub color: Color,
+    pub background_color: Color,
+    pub font_family: FontFamilies,
+    pub font_weight: Weight,
+    pub font_style: FontStyle,
+    pub transform: Option<StyleTransform>,
+    pub line_height: f32,
+}
+
+#[derive(Clone)]
 pub struct ComputedStyle {
-    pub(crate) size: (f32, f32),
-    pub(crate) border_radius: [f32; 4],
-    pub(crate) border_color: [Color; 4],
-    pub(crate) background_image: Option<Image>,
-    pub(crate) font_size: f32,
-    pub(crate) color: Color,
-    pub(crate) background_color: Color,
-    pub(crate) font_family: FontFamilies,
-    pub(crate) font_weight: Weight,
-    pub(crate) font_style: FontStyle,
-    pub(crate) transform: Option<StyleTransform>,
-    pub(crate) line_height: f32,
+    pub(crate) basic: BasicComputedStyle,
     pub(crate) layout: LayoutInfo,
 }
 
 impl ComputedStyle {
     pub fn size(&self) -> (f32, f32) {
-        self.size
+        self.basic.size
     }
 
     pub fn border_radius(&self) -> [f32; 4] {
-        self.border_radius
+        self.basic.border_radius
     }
 
     pub fn border_color(&self) -> [Color; 4] {
-        self.border_color
+        self.basic.border_color
     }
 
     pub fn background_image(&self) -> Option<&Image> {
-        self.background_image.as_ref()
+        self.basic.background_image.as_ref()
     }
 
     pub fn font_size(&self) -> f32 {
-        self.font_size
+        self.basic.font_size
     }
 
     pub fn color(&self) -> Color {
-        self.color
+        self.basic.color
     }
 
     pub fn background_color(&self) -> Color {
-        self.background_color
+        self.basic.background_color
     }
 
     pub fn font_family(&self) -> &FontFamilies {
-        &self.font_family
+        &self.basic.font_family
     }
 
     pub fn font_weight(&self) -> Weight {
-        self.font_weight
+        self.basic.font_weight
     }
 
     pub fn font_style(&self) -> &FontStyle {
-        &self.font_style
+        &self.basic.font_style
     }
 
     pub fn transform(&self) -> Option<&StyleTransform> {
-        self.transform.as_ref()
+        self.basic.transform.as_ref()
     }
 
     pub fn line_height(&self) -> f32 {
-        self.line_height
+        self.basic.line_height
     }
 
     pub fn border_width(&self) -> (f32, f32, f32, f32) {

@@ -2,7 +2,7 @@ mod delegate;
 
 use crate as deft;
 use crate::ui::{Element, Widget};
-use crate::js_module;
+use crate::{js_module, ok_or_return};
 use crate::text::textbox::{TextBox, TextCoord, TextElement};
 use deft_macros::{widget, js_methods};
 use crate::ui::richtext::delegate::{RichTextDelegate, RichTextDelegateData};
@@ -71,12 +71,17 @@ impl RichText {
         let mut element = Element::new("rich-text");
         let mut text_box = TextBox::new();
         {
-            let mut el = element.as_weak();
-            text_box.set_repaint_callback(move || el.mark_dirty(false));
+            let el = element.as_weak();
+            text_box.set_repaint_callback(move || {
+                let mut el = ok_or_return!(el.upgrade());
+                el.request_repaint();
+            });
         }
         {
-            let mut el = element.as_weak();
-            text_box.set_layout_callback(move |_has_text| el.mark_dirty(true));
+            let el = element.as_weak();
+            text_box.set_layout_callback(move |_has_text| {
+                el.make_layout_dirty();
+            });
         }
         text_box.bind_event(&mut element);
         let delegate = RichTextDelegateData {
@@ -84,6 +89,7 @@ impl RichText {
             text_box: text_box.clone(),
         }.to_ref();
         element.set_delegate(delegate.clone());
+        element.set_layout_listener(delegate.clone());
         let mut this = Self {
             el: element,
             delegate,
