@@ -4,6 +4,7 @@ use crate::base::{Callback, Rect};
 use crate::canvas_util::CanvasHelper;
 use crate::edit::edit_history::{EditDetail, EditHistory};
 use crate::ui::{Element, Widget, ElementDelegate, ElementWeak};
+use crate::window::SysWindow;
 use crate::event::{BlurEventListener, CaretChangeEvent, FocusEventListener, KeyDownEventListener, KeyEventDetail, MouseDownEventListener, MouseLeaveEventListener, PreeditEventListener, ScrollEventListener, TextChangeEvent, TextInputEventListener, TextUpdateEvent, KEY_MOD_CTRL, KEY_MOD_SHIFT};
 use crate::event_loop::{create_app_event_loop_proxy};
 use crate::js::{FromJsValue, ToJsValue};

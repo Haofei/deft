@@ -1,6 +1,8 @@
+pub mod dump;
 pub mod page;
 pub mod popup;
 pub mod tooltip;
+mod core;
 
 use crate as deft;
 use crate::app::{exit_app, AppEvent, InsetType};
@@ -67,7 +69,10 @@ use winit::window::{
 };
 use crate::event_loop::core::run_with_app_event_loop;
 use crate::ext::ext_process::{EXIT_ON_ALL_WINDOWS_CLOSED};
+use crate::ui::dump::DumpWindow;
 use crate::window::tooltip::Tooltip;
+
+pub use crate::window::core::*;
 
 thread_local! {
     static WIN_STATE_MANAGER: RefCell<StateManager> = RefCell::new(StateManager::new());
@@ -145,7 +150,7 @@ struct UIState {
 pub struct Window {
     handle: WindowHandle,
     id: i32,
-    pub(crate) window: SkiaWindow,
+    pub(crate) window: Box<dyn SysWindow>,
     cursor_position: LogicalPosition<f64>,
     pub(crate) window_type: WindowType,
     cursor_root_position: LogicalPosition<f64>,
@@ -460,7 +465,7 @@ impl Window {
     #[js_func]
     pub fn set_modal(&mut self, owner: WindowHandle) -> Result<(), JsError> {
         let owner_state = owner.state.upgrade()?;
-        self.window.set_modal(&owner_state.window);
+        self.window.set_modal(&*owner_state.window);
         #[cfg(windows)]
         owner_state.window.set_enable(false);
         let window_id = self.get_window_id();
@@ -1602,7 +1607,7 @@ impl Window {
         let _ = self.window.request_inner_size(LogicalSize {
             width: size.width,
             height: size.height,
-        });
+        }.into());
     }
 
     fn on_resize(&mut self) {
@@ -1706,10 +1711,10 @@ impl Window {
                 element_painter.put(ctx);
                 canvas.restore();
             }),
-            move |r| {
+            Box::new(move |r| {
                 waiter_finisher.finish(r);
                 send_app_event(AppEvent::RenderIdle(window_id)).unwrap();
-            },
+            }),
         );
         waiter
     }
@@ -1803,7 +1808,7 @@ impl Window {
     fn create_window(
         attributes: WindowAttributes,
         backend_types: &Vec<RenderBackendType>,
-    ) -> SkiaWindow {
+    ) -> Box<dyn SysWindow> {
         run_with_app_event_loop(|el| {
             debug!("render backends: {:?}", backend_types);
             for bt in backend_types {
@@ -1813,7 +1818,7 @@ impl Window {
                         sw.set_visible(true);
                     }
                     debug!("created window with backend {:?}", bt);
-                    return sw;
+                    return Box::new(sw);
                 } else {
                     debug!("failed to create window with backend: {:?}", bt);
                 }
