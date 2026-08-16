@@ -54,7 +54,7 @@ pub mod render;
 pub mod resource;
 mod state;
 mod task_executor;
-mod text;
+pub mod text;
 mod typeface;
 pub mod winit;
 

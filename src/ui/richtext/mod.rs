@@ -38,6 +38,10 @@ impl RichText {
         self.delegate.text_box.update_line(index, units);
     }
 
+    pub fn get_line(&self, row: usize) -> Option<&Vec<TextElement>> {
+        self.delegate.text_box.get_lines().get(row).map(|ln| &ln.units)
+    }
+
     #[js_func]
     pub fn clear(&mut self) {
         self.delegate.text_box.clear();
@@ -56,6 +60,10 @@ impl RichText {
     #[js_func]
     pub fn get_selection_text(&self) -> Option<String> {
         self.delegate.text_box.get_selection_text()
+    }
+
+    pub fn get_text(&self) -> String {
+        self.delegate.text_box.get_text()
     }
 
     #[js_func]
