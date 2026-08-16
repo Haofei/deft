@@ -1,7 +1,4 @@
 use crate::base::{Rect, ResultWaiter};
-use crate::event_loop::{
-    init_app_event_loop_proxy, run_app_event_loop_task, run_with_app_event_loop, AppEventProxy,
-};
 use crate::ext::ext_localstorage::localstorage;
 use crate::ext::ext_window::WINDOWS;
 use crate::js::js_engine::JsEngine;
@@ -28,6 +25,8 @@ use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
 use winit::platform::android::ActiveEventLoopExtAndroid;
 use winit::window::WindowId;
+use crate::event_loop::core::{run_app_event_loop_task, run_with_app_event_loop};
+use crate::event_loop::proxy::AppEventProxy;
 use crate::ui::CSS_MANAGER;
 use crate::ext::ext_worker::Worker;
 
@@ -118,7 +117,6 @@ impl WinitApp {
         let mut js_engine = JsEngine::get();
         js_engine.register_module::<Worker>("deft:core:worker").unwrap();
         js_engine.eval_module(include_str!("./js/deft.js"), "deft").unwrap();
-        init_app_event_loop_proxy(event_loop_proxy.clone());
         let _ = js_init_event_loop(move |js_event| {
             let _ = event_loop_proxy
                 .send_event(AppEvent::JsEvent(js_event))

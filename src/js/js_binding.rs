@@ -259,6 +259,15 @@ impl<T: ToJsValue> ToJsValue for Option<T> {
     }
 }
 
+impl<T: ToJsValue, E: ToString> ToJsValue for Result<T, E> {
+    fn to_js_value(self) -> Result<JsValue, ValueError> {
+        match self {
+            Ok(v) => v.to_js_value(),
+            Err(e) => Err(ValueError::Internal(e.to_string())),
+        }
+    }
+}
+
 macro_rules! impl_tuple_to_js_value {
     ($($idx: tt => $id: ident,)*) => {
         impl<$( $id : ToJsValue,)*> ToJsValue for ($($id,)*) {
@@ -318,18 +327,6 @@ impl<T: ToJsValue> ToJsCallResult for T {
         match self.to_js_value() {
             Ok(v) => Ok(v),
             Err(e) => Err(JsCallError::ConversionError(e)),
-        }
-    }
-}
-
-impl<T: ToJsValue, E: ToString> ToJsCallResult for Result<T, E> {
-    fn to_js_call_result(self) -> Result<JsValue, JsCallError> {
-        match self {
-            Ok(v) => v.to_js_call_result(),
-            Err(e) => {
-                let e = JsError::from_str(&e.to_string());
-                Err(JsCallError::ExecutionError(e))
-            }
         }
     }
 }

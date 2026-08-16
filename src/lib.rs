@@ -67,13 +67,15 @@ pub mod util;
 
 use crate::base::ResultWaiter;
 use crate::console::init_console;
-use crate::event_loop::AppEventProxy;
 pub use deft_macros::*;
+use crate::event_loop::core::init_app_event_loop_proxy;
+use crate::event_loop::proxy::AppEventProxy;
 
 pub static APP_EVENT_PROXY: OnceLock<AppEventProxy> = OnceLock::new();
 
 fn run_event_loop(event_loop: EventLoop<AppEventPayload>, deft_app: App) {
     let el_proxy = AppEventProxy::new(event_loop.create_proxy());
+    init_app_event_loop_proxy(el_proxy.clone());
     {
         let el_proxy = el_proxy.clone();
         APP_EVENT_PROXY.get_or_init(move || el_proxy);
@@ -112,7 +114,7 @@ pub fn send_app_event(event: AppEvent) -> Result<ResultWaiter<()>, Error> {
     let proxy = APP_EVENT_PROXY
         .get()
         .ok_or_else(|| anyhow!("no app event proxy found"))?;
-    let result = proxy.send_event(event)?;
+    let result = proxy.send_event(event).map_err(|err| anyhow!("{:?}", err))?;
     Ok(result)
 }
 

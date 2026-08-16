@@ -31,7 +31,7 @@ pub struct JsEventLoopProxy {
 }
 
 impl JsEventLoopProxy {
-    pub fn schedule_macro_task<F: FnOnce() + Send + Sync + 'static>(
+    pub fn schedule_macro_task<F: FnOnce() + Send + 'static>(
         &self,
         callback: F,
     ) -> Result<(), JsEventLoopClosedError> {
@@ -42,7 +42,7 @@ impl JsEventLoopProxy {
 }
 
 pub enum JsEvent {
-    MacroTask(Box<dyn FnOnce() + Send + Sync + 'static>),
+    MacroTask(Box<dyn FnOnce() + Send + 'static>),
 }
 
 #[derive(Debug)]

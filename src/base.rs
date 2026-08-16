@@ -696,6 +696,28 @@ impl UnsafeFnOnce {
 unsafe impl Send for UnsafeFnOnce {}
 unsafe impl Sync for UnsafeFnOnce {}
 
+pub struct UnsafeFnOnce1<P> {
+    callback: Box<dyn FnOnce(P)>,
+}
+
+impl<P: Send + 'static> UnsafeFnOnce1<P> {
+    pub unsafe fn new<F: FnOnce(P) + 'static>(callback: F) -> Self {
+        let callback: Box<dyn FnOnce(P)> = Box::new(callback);
+        Self { callback }
+    }
+
+    pub fn call(self, p: P) {
+        (self.callback)(p);
+    }
+
+    pub fn into_box(self) -> Box<dyn FnOnce(P) + Send + Sync + 'static> {
+        Box::new(move |p| self.call(p))
+    }
+}
+
+unsafe impl<P> Send for UnsafeFnOnce1<P> {}
+unsafe impl<P> Sync for UnsafeFnOnce1<P> {}
+
 pub struct UnsafeFnMut<P> {
     pub callback: Box<dyn FnMut(P)>,
 }
