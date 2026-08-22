@@ -68,6 +68,10 @@ mod tests {
     use crate::style::style_vars::StyleVars;
     use crate::style::var_expr::StyleExpr;
 
+    fn resolve_from(vars: &StyleVars, expr: &StyleExpr) -> Option<String> {
+        expr.resolve(&mut |k| vars.get(k).map(|s| s.to_string()))
+    }
+
     #[test]
     fn test_var_expr() {
         assert!(StyleExpr::parse("#FFF").is_none());
@@ -76,9 +80,9 @@ mod tests {
         vars.set("highlight-border-color", "#123456");
 
         let style_expr = StyleExpr::parse("var(--color)").unwrap();
-        assert_eq!("#abc", style_expr.resolve(&vars).unwrap().as_str());
+        assert_eq!("#abc", resolve_from(&vars, &style_expr).unwrap().as_str());
 
         let border_expr = StyleExpr::parse("1px var(--highlight-border-color)").unwrap();
-        assert_eq!("1px #123456", border_expr.resolve(&vars).unwrap().as_str());
+        assert_eq!("1px #123456", resolve_from(&vars, &border_expr).unwrap().as_str());
     }
 }

@@ -418,7 +418,6 @@ impl Selector {
 pub mod tests {
     use crate::ui::button::Button;
     use crate::ui::container::Container;
-    use crate::ui::{Element, Widget};
     use crate::style::select::Selectors;
 
     #[test]

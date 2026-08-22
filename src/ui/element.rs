@@ -1049,17 +1049,7 @@ impl Element {
             self.calculate_layout();
         }
     }
-
-    pub(crate) fn update_layout_recursively(&mut self) {
-        //TODO skip repeat update
-        if !self.parent.is_element() || self.style.has_shadow() {
-            self.style.build();
-            self.calculate_layout();
-        }
-        for c in &mut self.children {
-            c.update_layout_recursively();
-        }
-    }
+    
 }
 
 impl ElementWeak {
