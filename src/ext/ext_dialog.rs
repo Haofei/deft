@@ -9,6 +9,7 @@ use quick_js::JsValue;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use serde::{Deserialize, Serialize};
 use std::thread;
+use skia_window::skia_window::SkiaWindow;
 use crate::event_loop::create_event_loop_fn_mut;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -37,7 +38,9 @@ impl dialog {
         let mut owner = None;
         if let Some(window) = window {
             if let Ok(window) = window.upgrade() {
-                owner = Some(DialogHandle(window.window.raw_window_handle()?));
+                if let Some(sw) = window.window.as_any().downcast_ref::<SkiaWindow>() {
+                    owner = Some(DialogHandle(sw.raw_window_handle()?));
+                };
             }
         }
 
